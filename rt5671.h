@@ -2064,8 +2064,7 @@ struct rt5671_priv {
 	struct snd_soc_component *component;
 	struct rt5671_platform_data pdata;
 	struct regmap *regmap;
-	struct delayed_work patch_work;
-	struct snd_soc_jack hp_jack;
+	struct snd_soc_jack *hp_jack;
 	struct snd_soc_jack_gpio hp_gpio;
 
 	int aif_pu;

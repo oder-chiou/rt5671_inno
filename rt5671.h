@@ -2006,7 +2006,7 @@ enum {
 #define RT5671_HEADSET_DET	BIT(1)
 #define RT5671_HEADPHO_DET	BIT(2)
 
-int rt5671_headset_detect(struct snd_soc_codec *codec, int jack_insert);
+int rt5671_headset_detect(struct snd_soc_component *component, int jack_insert);
 
 /* System Clock Source */
 enum {
@@ -2061,7 +2061,7 @@ struct rt5671_pll_code {
 };
 
 struct rt5671_priv {
-	struct snd_soc_codec *codec;
+	struct snd_soc_component *component;
 	struct rt5671_platform_data pdata;
 	struct regmap *regmap;
 	struct delayed_work patch_work;

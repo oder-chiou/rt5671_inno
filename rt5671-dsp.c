@@ -33,21 +33,21 @@ static unsigned short rt5671_dsp_ns[][2] = {
 
 /**
  * rt5671_dsp_done - Wait until DSP is ready.
- * @codec: SoC Audio Codec device.
+ * @component: SoC Audio component device.
  *
  * To check voice DSP status and confirm it's ready for next work.
  *
  * Returns 0 for success or negative error code.
  */
-static int rt5671_dsp_done(struct snd_soc_codec *codec)
+static int rt5671_dsp_done(struct snd_soc_component *component)
 {
 	unsigned int count = 0, dsp_val;
 
-	dsp_val = snd_soc_read(codec, RT5671_DSP_CTRL1);
+	dsp_val = snd_soc_component_read32(component, RT5671_DSP_CTRL1);
 	while (dsp_val & RT5671_DSP_BUSY_MASK) {
 		if (count > 10)
 			return -EBUSY;
-		dsp_val = snd_soc_read(codec, RT5671_DSP_CTRL1);
+		dsp_val = snd_soc_component_read32(component, RT5671_DSP_CTRL1);
 		count++;
 	}
 
@@ -56,7 +56,7 @@ static int rt5671_dsp_done(struct snd_soc_codec *codec)
 
 /**
  * rt5671_dsp_write - Write DSP register.
- * @codec: SoC audio codec device.
+ * @component: SoC audio component device.
  * @param: DSP parameters.
   *
  * Modify voice DSP register for sound effect. The DSP can be controlled
@@ -65,33 +65,33 @@ static int rt5671_dsp_done(struct snd_soc_codec *codec)
  *
  * Returns 0 for success or negative error code.
  */
-int rt5671_dsp_write(struct snd_soc_codec *codec,
+int rt5671_dsp_write(struct snd_soc_component *component,
 		unsigned int addr, unsigned int data)
 {
 	unsigned int dsp_val;
 	int ret;
 
-	ret = snd_soc_write(codec, RT5671_DSP_CTRL2, addr);
+	ret = snd_soc_component_write(component, RT5671_DSP_CTRL2, addr);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to write DSP addr reg: %d\n", ret);
+		dev_err(component->dev, "Failed to write DSP addr reg: %d\n", ret);
 		goto err;
 	}
-	ret = snd_soc_write(codec, RT5671_DSP_CTRL3, data);
+	ret = snd_soc_component_write(component, RT5671_DSP_CTRL3, data);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to write DSP data reg: %d\n", ret);
+		dev_err(component->dev, "Failed to write DSP data reg: %d\n", ret);
 		goto err;
 	}
 	dsp_val = RT5671_DSP_I2C_AL_16 | RT5671_DSP_DL_2 |
 		RT5671_DSP_CMD_MW | DSP_CLK_RATE | RT5671_DSP_CMD_EN;
 
-	ret = snd_soc_write(codec, RT5671_DSP_CTRL1, dsp_val);
+	ret = snd_soc_component_write(component, RT5671_DSP_CTRL1, dsp_val);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to write DSP cmd reg: %d\n", ret);
+		dev_err(component->dev, "Failed to write DSP cmd reg: %d\n", ret);
 		goto err;
 	}
-	ret = rt5671_dsp_done(codec);
+	ret = rt5671_dsp_done(component);
 	if (ret < 0) {
-		dev_err(codec->dev, "DSP is busy: %d\n", ret);
+		dev_err(component->dev, "DSP is busy: %d\n", ret);
 		goto err;
 	}
 
@@ -103,7 +103,7 @@ err:
 
 /**
  * rt5671_dsp_read - Read DSP register.
- * @codec: SoC audio codec device.
+ * @component: SoC audio component device.
  * @reg: DSP register index.
  *
  * Read DSP setting value from voice DSP. The DSP can be controlled
@@ -113,82 +113,82 @@ err:
  * Returns DSP register value or negative error code.
  */
 unsigned int rt5671_dsp_read(
-	struct snd_soc_codec *codec, unsigned int reg)
+	struct snd_soc_component *component, unsigned int reg)
 {
 	unsigned int value;
 	unsigned int dsp_val;
 	int ret = 0;
 
-	ret = rt5671_dsp_done(codec);
+	ret = rt5671_dsp_done(component);
 	if (ret < 0) {
-		dev_err(codec->dev, "DSP is busy: %d\n", ret);
+		dev_err(component->dev, "DSP is busy: %d\n", ret);
 		goto err;
 	}
 
-	ret = snd_soc_write(codec, RT5671_DSP_CTRL2, reg);
+	ret = snd_soc_component_write(component, RT5671_DSP_CTRL2, reg);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to write DSP addr reg: %d\n", ret);
+		dev_err(component->dev, "Failed to write DSP addr reg: %d\n", ret);
 		goto err;
 	}
 	dsp_val = RT5671_DSP_I2C_AL_16 | RT5671_DSP_DL_0 | RT5671_DSP_RW_MASK |
 		RT5671_DSP_CMD_MR | DSP_CLK_RATE | RT5671_DSP_CMD_EN;
 
-	ret = snd_soc_write(codec, RT5671_DSP_CTRL1, dsp_val);
+	ret = snd_soc_component_write(component, RT5671_DSP_CTRL1, dsp_val);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to write DSP cmd reg: %d\n", ret);
+		dev_err(component->dev, "Failed to write DSP cmd reg: %d\n", ret);
 		goto err;
 	}
 
-	ret = rt5671_dsp_done(codec);
+	ret = rt5671_dsp_done(component);
 	if (ret < 0) {
-		dev_err(codec->dev, "DSP is busy: %d\n", ret);
+		dev_err(component->dev, "DSP is busy: %d\n", ret);
 		goto err;
 	}
 
-	ret = snd_soc_write(codec, RT5671_DSP_CTRL2, 0x26);
+	ret = snd_soc_component_write(component, RT5671_DSP_CTRL2, 0x26);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to write DSP addr reg: %d\n", ret);
+		dev_err(component->dev, "Failed to write DSP addr reg: %d\n", ret);
 		goto err;
 	}
 	dsp_val = RT5671_DSP_DL_1 | RT5671_DSP_CMD_RR | RT5671_DSP_RW_MASK |
 		DSP_CLK_RATE | RT5671_DSP_CMD_EN;
 
-	ret = snd_soc_write(codec, RT5671_DSP_CTRL1, dsp_val);
+	ret = snd_soc_component_write(component, RT5671_DSP_CTRL1, dsp_val);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to write DSP cmd reg: %d\n", ret);
+		dev_err(component->dev, "Failed to write DSP cmd reg: %d\n", ret);
 		goto err;
 	}
 
-	ret = rt5671_dsp_done(codec);
+	ret = rt5671_dsp_done(component);
 	if (ret < 0) {
-		dev_err(codec->dev, "DSP is busy: %d\n", ret);
+		dev_err(component->dev, "DSP is busy: %d\n", ret);
 		goto err;
 	}
 
-	ret = snd_soc_write(codec, RT5671_DSP_CTRL2, 0x25);
+	ret = snd_soc_component_write(component, RT5671_DSP_CTRL2, 0x25);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to write DSP addr reg: %d\n", ret);
+		dev_err(component->dev, "Failed to write DSP addr reg: %d\n", ret);
 		goto err;
 	}
 
 	dsp_val = RT5671_DSP_DL_1 | RT5671_DSP_CMD_RR | RT5671_DSP_RW_MASK |
 		DSP_CLK_RATE | RT5671_DSP_CMD_EN;
 
-	ret = snd_soc_write(codec, RT5671_DSP_CTRL1, dsp_val);
+	ret = snd_soc_component_write(component, RT5671_DSP_CTRL1, dsp_val);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to write DSP cmd reg: %d\n", ret);
+		dev_err(component->dev, "Failed to write DSP cmd reg: %d\n", ret);
 		goto err;
 	}
 
-	ret = rt5671_dsp_done(codec);
+	ret = rt5671_dsp_done(component);
 	if (ret < 0) {
-		dev_err(codec->dev, "DSP is busy: %d\n", ret);
+		dev_err(component->dev, "DSP is busy: %d\n", ret);
 		goto err;
 	}
 
-	ret = snd_soc_read(codec, RT5671_DSP_CTRL5);
+	ret = snd_soc_component_read32(component, RT5671_DSP_CTRL5);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to read DSP data reg: %d\n", ret);
+		dev_err(component->dev, "Failed to read DSP data reg: %d\n", ret);
 		goto err;
 	}
 
@@ -203,8 +203,7 @@ static int rt5671_dsp_get(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 
 	ucontrol->value.integer.value[0] = rt5671->dsp_sw;
 
@@ -215,8 +214,7 @@ static int rt5671_dsp_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 
 	rt5671->dsp_sw = ucontrol->value.integer.value[0];
 
@@ -260,7 +258,7 @@ static const struct snd_kcontrol_new rt5671_dsp_snd_controls[] = {
 /**
  * rt5671_dsp_set_mode - Set DSP mode parameters.
  *
- * @codec: SoC audio codec device.
+ * @component: SoC audio component device.
  * @mode: DSP mode.
  *
  * Set parameters of mode to DSP.
@@ -269,26 +267,26 @@ static const struct snd_kcontrol_new rt5671_dsp_snd_controls[] = {
  *
  * Returns 0 for success or negative error code.
  */
-static int rt5671_dsp_set_mode(struct snd_soc_codec *codec, int mode)
+static int rt5671_dsp_set_mode(struct snd_soc_component *component, int mode)
 {
 	int ret, i, tab_num;
 	unsigned short (*mode_tab)[2];
 
 	switch (mode) {
 	case RT5671_DSP_NS:
-		dev_info(codec->dev, "NS\n");
+		dev_info(component->dev, "NS\n");
 		mode_tab = rt5671_dsp_ns;
 		tab_num = RT5671_DSP_NS_NUM;
 		break;
 
 	case RT5671_DSP_DIS:
 	default:
-		dev_info(codec->dev, "Disable\n");
+		dev_info(component->dev, "Disable\n");
 		return 0;
 	}
 
 	for (i = 0; i < tab_num; i++) {
-		ret = rt5671_dsp_write(codec, mode_tab[i][0], mode_tab[i][1]);
+		ret = rt5671_dsp_write(component, mode_tab[i][0], mode_tab[i][1]);
 		if (ret < 0)
 			goto mode_err;
 	}
@@ -297,7 +295,7 @@ static int rt5671_dsp_set_mode(struct snd_soc_codec *codec, int mode)
 
 mode_err:
 
-	dev_err(codec->dev, "Fail to set mode %d parameters: %d\n", mode, ret);
+	dev_err(component->dev, "Fail to set mode %d parameters: %d\n", mode, ret);
 	return ret;
 }
 
@@ -308,33 +306,33 @@ mode_err:
  *
  * Returns 0 for success or negative error code.
  */
-static int rt5671_dsp_snd_effect(struct snd_soc_codec *codec)
+static int rt5671_dsp_snd_effect(struct snd_soc_component *component)
 {
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 
-	snd_soc_update_bits(codec, RT5671_GEN_CTRL1, RT5671_RST_DSP,
+	snd_soc_component_update_bits(component, RT5671_GEN_CTRL1, RT5671_RST_DSP,
 		RT5671_RST_DSP);
-	snd_soc_update_bits(codec, RT5671_GEN_CTRL1, RT5671_RST_DSP, 0);
+	snd_soc_component_update_bits(component, RT5671_GEN_CTRL1, RT5671_RST_DSP, 0);
 
 	msleep(20);
 
-	return rt5671_dsp_set_mode(codec, rt5671->dsp_sw);
+	return rt5671_dsp_set_mode(component, rt5671->dsp_sw);
 }
 
 static int rt5671_dsp_event(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *k, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMD:
-		dev_dbg(codec->dev, "%s(): PMD\n", __func__);
-		rt5671_dsp_write(codec, 0x22f9, 1);
+		dev_dbg(component->dev, "%s(): PMD\n", __func__);
+		rt5671_dsp_write(component, 0x22f9, 1);
 		break;
 
 	case SND_SOC_DAPM_POST_PMU:
-		dev_dbg(codec->dev, "%s(): PMU\n", __func__);
-		rt5671_dsp_snd_effect(codec);
+		dev_dbg(component->dev, "%s(): PMU\n", __func__);
+		rt5671_dsp_snd_effect(component);
 		break;
 
 	default:
@@ -378,7 +376,7 @@ static ssize_t rt5671_dsp_show(struct device *dev,
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt5671_priv *rt5671 = i2c_get_clientdata(client);
-	struct snd_soc_codec *codec = rt5671->codec;
+	struct snd_soc_component *component = rt5671->component;
 	unsigned short (*rt5671_dsp_tab)[2];
 	unsigned int val;
 	int cnt = 0, i, tab_num;
@@ -399,13 +397,13 @@ static ssize_t rt5671_dsp_show(struct device *dev,
 	for (i = 0; i < tab_num; i++) {
 		if (cnt + RT5671_DSP_REG_DISP_LEN >= PAGE_SIZE)
 			break;
-		val = rt5671_dsp_read(codec, rt5671_dsp_tab[i][0]);
+		val = rt5671_dsp_read(component, rt5671_dsp_tab[i][0]);
 		cnt += snprintf(buf + cnt, RT5671_DSP_REG_DISP_LEN,
 			"%04x: %04x\n", rt5671_dsp_tab[i][0], val);
 	}
 
 	if (cnt + RT5671_DSP_REG_DISP_LEN < PAGE_SIZE) {
-		val = rt5671_dsp_read(codec, 0x3fb5);
+		val = rt5671_dsp_read(component, 0x3fb5);
 		cnt += snprintf(buf + cnt, RT5671_DSP_REG_DISP_LEN,
 			"%04x: %04x\n",
 			0x3fb5, val);
@@ -423,7 +421,7 @@ static ssize_t rt5671_dsp_reg_store(struct device *dev,
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt5671_priv *rt5671 = i2c_get_clientdata(client);
-	struct snd_soc_codec *codec = rt5671->codec;
+	struct snd_soc_component *component = rt5671->component;
 	unsigned int val = 0, addr = 0;
 	int i;
 
@@ -454,9 +452,9 @@ static ssize_t rt5671_dsp_reg_store(struct device *dev,
 	pr_debug("addr=0x%x val=0x%x\n", addr, val);
 	if (i == count)
 		pr_debug("0x%04x = 0x%04x\n",
-			addr, rt5671_dsp_read(codec, addr));
+			addr, rt5671_dsp_read(component, addr));
 	else
-		rt5671_dsp_write(codec, addr, val);
+		rt5671_dsp_write(component, addr, val);
 
 	return count;
 }
@@ -464,27 +462,27 @@ static DEVICE_ATTR(dsp_reg, 0664, rt5671_dsp_show, rt5671_dsp_reg_store);
 
 /**
  * rt5671_dsp_probe - register DSP for rt5671
- * @codec: audio codec
+ * @component: component
  *
  * To register DSP function for rt5671.
  *
  * Returns 0 for success or negative error code.
  */
-int rt5671_dsp_probe(struct snd_soc_codec *codec)
+int rt5671_dsp_probe(struct snd_soc_component *component)
 {
-	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	struct snd_soc_dapm_context *dapm = snd_soc_component_get_dapm(component);
 	int ret;
 
-	snd_soc_add_codec_controls(codec, rt5671_dsp_snd_controls,
+	snd_soc_add_component_controls(component, rt5671_dsp_snd_controls,
 			ARRAY_SIZE(rt5671_dsp_snd_controls));
 	snd_soc_dapm_new_controls(dapm, rt5671_dsp_dapm_widgets,
 			ARRAY_SIZE(rt5671_dsp_dapm_widgets));
 	snd_soc_dapm_add_routes(dapm, rt5671_dsp_dapm_routes,
 			ARRAY_SIZE(rt5671_dsp_dapm_routes));
 
-	ret = device_create_file(codec->dev, &dev_attr_dsp_reg);
+	ret = device_create_file(component->dev, &dev_attr_dsp_reg);
 	if (ret != 0) {
-		dev_err(codec->dev,
+		dev_err(component->dev,
 			"Failed to create index_reg sysfs files: %d\n", ret);
 		return ret;
 	}
@@ -494,13 +492,13 @@ int rt5671_dsp_probe(struct snd_soc_codec *codec)
 EXPORT_SYMBOL_GPL(rt5671_dsp_probe);
 
 #ifdef CONFIG_PM
-int rt5671_dsp_suspend(struct snd_soc_codec *codec)
+int rt5671_dsp_suspend(struct snd_soc_component *component)
 {
 	return 0;
 }
 EXPORT_SYMBOL_GPL(rt5671_dsp_suspend);
 
-int rt5671_dsp_resume(struct snd_soc_codec *codec)
+int rt5671_dsp_resume(struct snd_soc_component *component)
 {
 	return 0;
 }

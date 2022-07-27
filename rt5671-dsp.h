@@ -52,14 +52,14 @@ enum {
 	RT5671_DSP_NS,
 };
 
-int rt5671_dsp_probe(struct snd_soc_codec *codec);
+int rt5671_dsp_probe(struct snd_soc_component *component);
 #ifdef CONFIG_PM
-int rt5671_dsp_suspend(struct snd_soc_codec *codec);
-int rt5671_dsp_resume(struct snd_soc_codec *codec);
+int rt5671_dsp_suspend(struct snd_soc_component *component);
+int rt5671_dsp_resume(struct snd_soc_component *component);
 #endif
-int rt5671_dsp_write(struct snd_soc_codec *codec,
+int rt5671_dsp_write(struct snd_soc_component *component,
 	unsigned int addr, unsigned int data);
 unsigned int rt5671_dsp_read(
-	struct snd_soc_codec *codec, unsigned int reg);
+	struct snd_soc_component *component, unsigned int reg);
 #endif /* __RT5671_DSP_H__ */
 

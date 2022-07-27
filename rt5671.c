@@ -104,6 +104,7 @@ static struct rt5671_init_reg init_list[] = {
 	/* Mute STO1 ADC for depop */
 	{ RT5671_STO1_ADC_DIG_VOL, 0xafaf },
 	{ RT5671_PDM_OUT_CTRL	, 0xff00 },
+	{ RT5671_ASRC_8		, 0x0123 },
 
 #ifdef JD1_FUNC
 	{ RT5671_GPIO_CTRL2	, 0x0004 },
@@ -122,12 +123,12 @@ static struct rt5671_init_reg init_list[] = {
 };
 #define RT5671_INIT_REG_LEN ARRAY_SIZE(init_list)
 
-static int rt5671_reg_init(struct snd_soc_codec *codec)
+static int rt5671_reg_init(struct snd_soc_component *component)
 {
 	int i;
 
 	for (i = 0; i < RT5671_INIT_REG_LEN; i++)
-		snd_soc_write(codec, init_list[i].reg, init_list[i].val);
+		snd_soc_component_write(component, init_list[i].reg, init_list[i].val);
 
 	return 0;
 }
@@ -273,14 +274,14 @@ static const struct reg_default rt5671_reg[] = {
 	{ 0xfc, 0x0100 },
 };
 
-static int rt5671_reset(struct snd_soc_codec *codec)
+static int rt5671_reset(struct snd_soc_component *component)
 {
-	return snd_soc_write(codec, RT5671_RESET, 0);
+	return snd_soc_component_write(component, RT5671_RESET, 0);
 }
 
 /**
  * rt5671_index_write - Write private register.
- * @codec: SoC audio codec device.
+ * @component: SoC audio component device.
  * @reg: Private register index.
  * @value: Private register Data.
  *
@@ -289,19 +290,19 @@ static int rt5671_reset(struct snd_soc_codec *codec)
  *
  * Returns 0 for success or negative error code.
  */
-static int rt5671_index_write(struct snd_soc_codec *codec,
+static int rt5671_index_write(struct snd_soc_component *component,
 		unsigned int reg, unsigned int value)
 {
 	int ret;
 
-	ret = snd_soc_write(codec, RT5671_PRIV_INDEX, reg);
+	ret = snd_soc_component_write(component, RT5671_PRIV_INDEX, reg);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to set private addr: %d\n", ret);
+		dev_err(component->dev, "Failed to set private addr: %d\n", ret);
 		goto err;
 	}
-	ret = snd_soc_write(codec, RT5671_PRIV_DATA, value);
+	ret = snd_soc_component_write(component, RT5671_PRIV_DATA, value);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to set private value: %d\n", ret);
+		dev_err(component->dev, "Failed to set private value: %d\n", ret);
 		goto err;
 	}
 	return 0;
@@ -312,7 +313,7 @@ err:
 
 /**
  * rt5671_index_read - Read private register.
- * @codec: SoC audio codec device.
+ * @component: SoC audio component device.
  * @reg: Private register index.
  *
  * Read advanced setting from private register. It can be read through
@@ -321,21 +322,21 @@ err:
  * Returns private register value or negative error code.
  */
 static unsigned int rt5671_index_read(
-	struct snd_soc_codec *codec, unsigned int reg)
+	struct snd_soc_component *component, unsigned int reg)
 {
 	int ret;
 
-	ret = snd_soc_write(codec, RT5671_PRIV_INDEX, reg);
+	ret = snd_soc_component_write(component, RT5671_PRIV_INDEX, reg);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to set private addr: %d\n", ret);
+		dev_err(component->dev, "Failed to set private addr: %d\n", ret);
 		return ret;
 	}
-	return snd_soc_read(codec, RT5671_PRIV_DATA);
+	return snd_soc_component_read32(component, RT5671_PRIV_DATA);
 }
 
 /**
  * rt5671_index_update_bits - update private register bits
- * @codec: audio codec
+ * @component: audio component
  * @reg: Private register index.
  * @mask: register mask
  * @value: new value
@@ -344,15 +345,15 @@ static unsigned int rt5671_index_read(
  *
  * Returns 1 for change, 0 for no change, or negative error code.
  */
-static int rt5671_index_update_bits(struct snd_soc_codec *codec,
+static int rt5671_index_update_bits(struct snd_soc_component *component,
 	unsigned int reg, unsigned int mask, unsigned int value)
 {
 	unsigned int old, new;
 	int change, ret;
 
-	ret = rt5671_index_read(codec, reg);
+	ret = rt5671_index_read(component, reg);
 	if (ret < 0) {
-		dev_err(codec->dev, "Failed to read private reg: %d\n", ret);
+		dev_err(component->dev, "Failed to read private reg: %d\n", ret);
 		goto err;
 	}
 
@@ -360,9 +361,9 @@ static int rt5671_index_update_bits(struct snd_soc_codec *codec,
 	new = (old & ~mask) | (value & mask);
 	change = old != new;
 	if (change) {
-		ret = rt5671_index_write(codec, reg, new);
+		ret = rt5671_index_write(component, reg, new);
 		if (ret < 0) {
-			dev_err(codec->dev,
+			dev_err(component->dev,
 				"Failed to write private reg: %d\n", ret);
 			goto err;
 		}
@@ -594,7 +595,7 @@ static bool rt5671_readable_register(
 
 /**
  * rt5671_headset_detect - Detect headset.
- * @codec: SoC audio codec device.
+ * @component: SoC audio component device.
  * @jack_insert: Jack insert or not.
  *
  * Detect whether is headset or not when jack inserted.
@@ -602,34 +603,34 @@ static bool rt5671_readable_register(
  * Returns detect status.
  */
 
-int rt5671_headset_detect(struct snd_soc_codec *codec, int jack_insert)
+int rt5671_headset_detect(struct snd_soc_component *component, int jack_insert)
 {
 	int val;
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
-	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
+	struct snd_soc_dapm_context *dapm = snd_soc_component_get_dapm(component);
 
 	if (jack_insert) {
 		snd_soc_dapm_force_enable_pin(dapm, "micbias1");
 		snd_soc_dapm_force_enable_pin(dapm, "Mic Det Power");
 		snd_soc_dapm_sync(dapm);
-		snd_soc_update_bits(codec, RT5671_GEN_CTRL2,
+		snd_soc_component_update_bits(component, RT5671_GEN_CTRL2,
 			0x0400, 0x0400);
-		snd_soc_update_bits(codec, RT5671_CJ_CTRL2,
+		snd_soc_component_update_bits(component, RT5671_CJ_CTRL2,
 			RT5671_CBJ_DET_MODE, RT5671_CBJ_DET_MODE);
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_JD1, RT5671_PWR_JD1);
-		snd_soc_update_bits(codec, RT5671_CJ_CTRL1, 0x20, 0x20);
+		snd_soc_component_update_bits(component, RT5671_CJ_CTRL1, 0x20, 0x20);
 		msleep(300);
-		val = snd_soc_read(codec, RT5671_JD_CTRL3) & 0x7000;
+		val = snd_soc_component_read32(component, RT5671_JD_CTRL3) & 0x7000;
 		if (val == 0x7000) {
 			rt5671->jack_type = SND_JACK_HEADSET;
 
-			snd_soc_update_bits(codec, RT5671_CJ_CTRL1, 0x0180, 0x0180);
-			snd_soc_update_bits(codec, RT5671_JD_CTRL3, 0x00c0, 0x00c0);
+			snd_soc_component_update_bits(component, RT5671_CJ_CTRL1, 0x0180, 0x0180);
+			snd_soc_component_update_bits(component, RT5671_JD_CTRL3, 0x00c0, 0x00c0);
 
-			snd_soc_update_bits(codec, RT5671_IRQ_CTRL3, 0x8, 0x8);
-			snd_soc_update_bits(codec, RT5671_IL_CMD1, 0x40, 0x40);
-			snd_soc_read(codec, RT5671_IL_CMD1);
+			snd_soc_component_update_bits(component, RT5671_IRQ_CTRL3, 0x8, 0x8);
+			snd_soc_component_update_bits(component, RT5671_IL_CMD1, 0x40, 0x40);
+			snd_soc_component_read32(component, RT5671_IL_CMD1);
 		} else {
 			rt5671->jack_type = SND_JACK_HEADPHONE;
 			snd_soc_dapm_disable_pin(dapm, "micbias1");
@@ -637,10 +638,10 @@ int rt5671_headset_detect(struct snd_soc_codec *codec, int jack_insert)
 			snd_soc_dapm_sync(dapm);
 		}
 	} else {
-		snd_soc_update_bits(codec, RT5671_IL_CMD1, 0x40, 0x0);
-		snd_soc_update_bits(codec, RT5671_IRQ_CTRL3, 0x8, 0x0);
-		snd_soc_update_bits(codec, RT5671_CJ_CTRL1, 0x0180, 0x0);
-		snd_soc_update_bits(codec, RT5671_JD_CTRL3, 0x00c0, 0x0);
+		snd_soc_component_update_bits(component, RT5671_IL_CMD1, 0x40, 0x0);
+		snd_soc_component_update_bits(component, RT5671_IRQ_CTRL3, 0x8, 0x0);
+		snd_soc_component_update_bits(component, RT5671_CJ_CTRL1, 0x0180, 0x0);
+		snd_soc_component_update_bits(component, RT5671_JD_CTRL3, 0x00c0, 0x0);
 		rt5671->jack_type = 0;
 		snd_soc_dapm_disable_pin(dapm, "micbias1");
 		snd_soc_dapm_disable_pin(dapm, "Mic Det Power");
@@ -652,34 +653,34 @@ int rt5671_headset_detect(struct snd_soc_codec *codec, int jack_insert)
 }
 EXPORT_SYMBOL(rt5671_headset_detect);
 
-int rt5671_button_detect(struct snd_soc_codec *codec)
+int rt5671_button_detect(struct snd_soc_component *component)
 {
 	int btn_type, val;
 		
-	val = snd_soc_read(codec, RT5671_IL_CMD1);
+	val = snd_soc_component_read32(component, RT5671_IL_CMD1);
 	btn_type = val & 0xff80;
-	snd_soc_write(codec, RT5671_IL_CMD1, val);
+	snd_soc_component_write(component, RT5671_IL_CMD1, val);
 	if (btn_type != 0) {
 		msleep(20);
-		val = snd_soc_read(codec, RT5671_IL_CMD1);
-		snd_soc_write(codec, RT5671_IL_CMD1, val);
+		val = snd_soc_component_read32(component, RT5671_IL_CMD1);
+		snd_soc_component_write(component, RT5671_IL_CMD1, val);
 	}
 	return btn_type;
 }
 EXPORT_SYMBOL(rt5671_button_detect);
 
-int rt5671_check_interrupt_event(struct snd_soc_codec *codec, int *data)
+int rt5671_check_interrupt_event(struct snd_soc_component *component, int *data)
 {
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 	int val, event_type;
 
-	if (snd_soc_read(codec, 0xbe) & 0x0080)
+	if (snd_soc_component_read32(component, 0xbe) & 0x0080)
 		return RT5671_VAD_EVENT;
 
 	if (1 == rt5671->pdata.jd_mode) /* 2 port */
-		val = snd_soc_read(codec, RT5671_A_JD_CTRL1) & 0x0070;
+		val = snd_soc_component_read32(component, RT5671_A_JD_CTRL1) & 0x0070;
 	else
-		val = snd_soc_read(codec, RT5671_A_JD_CTRL1) & 0x0020;
+		val = snd_soc_component_read32(component, RT5671_A_JD_CTRL1) & 0x0020;
 
 	*data = 0;
 	switch (val) {
@@ -687,15 +688,15 @@ int rt5671_check_interrupt_event(struct snd_soc_codec *codec, int *data)
 	case 0x0: /* 1 port or 2 port */
 		/* jack insert */
 		if (rt5671->jack_type == 0) {
-			rt5671_headset_detect(codec, 1);
+			rt5671_headset_detect(component, 1);
 			*data = rt5671->jack_type;
 			return RT5671_J_IN_EVENT;
 		}
 		event_type = 0;
-		if (snd_soc_read(codec, RT5671_IRQ_CTRL3) & 0x4) {
+		if (snd_soc_component_read32(component, RT5671_IRQ_CTRL3) & 0x4) {
 			/* button event */
 			event_type = RT5671_BTN_EVENT;
-			*data = rt5671_button_detect(codec);
+			*data = rt5671_button_detect(component);
 		}
 		if (*data == 0) {
 			event_type = RT5671_BR_EVENT;
@@ -704,8 +705,8 @@ int rt5671_check_interrupt_event(struct snd_soc_codec *codec, int *data)
 	case 0x70: /* 2 port */
 	case 0x10: /* 2 port */
 	case 0x20: /* 1 port */
-		snd_soc_update_bits(codec, RT5671_IRQ_CTRL3, 0x1, 0x0);
-		rt5671_headset_detect(codec, 0);
+		snd_soc_component_update_bits(component, RT5671_IRQ_CTRL3, 0x1, 0x0);
+		rt5671_headset_detect(component, 0);
 		return RT5671_J_OUT_EVENT;
 	default:
 		return RT5671_UN_EVENT;
@@ -793,15 +794,14 @@ static int rt5671_ad_sto1_asrc_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 
 	switch (ucontrol->value.integer.value[0]) {
 	case 1 ... 4: /*enable*/
-		if (snd_soc_read(codec, RT5671_PWR_DIG2) & RT5671_PWR_ADC_S1F)
-			snd_soc_update_bits(codec, RT5671_ASRC_1, 0x8, 0x8);
+		if (snd_soc_component_read32(component, RT5671_PWR_DIG2) & RT5671_PWR_ADC_S1F)
+			snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x8, 0x8);
 		break;
 	default: /*disable*/
-		snd_soc_update_bits(codec, RT5671_ASRC_1, 0x8, 0);
+		snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x8, 0);
 		break;
 	}
 
@@ -812,15 +812,14 @@ static int rt5671_ad_sto2_asrc_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 
 	switch (ucontrol->value.integer.value[0]) {
 	case 1 ... 4: /*enable*/
-		if (snd_soc_read(codec, RT5671_PWR_DIG2) & RT5671_PWR_ADC_S2F)
-			snd_soc_update_bits(codec, RT5671_ASRC_1, 0x4, 0x4);
+		if (snd_soc_component_read32(component, RT5671_PWR_DIG2) & RT5671_PWR_ADC_S2F)
+			snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x4, 0x4);
 		break;
 	default: /*disable*/
-		snd_soc_update_bits(codec, RT5671_ASRC_1, 0x4, 0);
+		snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x4, 0);
 		break;
 	}
 
@@ -831,15 +830,14 @@ static int rt5671_ad_monol_asrc_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 
 	switch (ucontrol->value.integer.value[0]) {
 	case 1 ... 4: /*enable*/
-		if (snd_soc_read(codec, RT5671_PWR_DIG2) & RT5671_PWR_ADC_MF_L)
-			snd_soc_update_bits(codec, RT5671_ASRC_1, 0x2, 0x2);
+		if (snd_soc_component_read32(component, RT5671_PWR_DIG2) & RT5671_PWR_ADC_MF_L)
+			snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x2, 0x2);
 		break;
 	default: /*disable*/
-		snd_soc_update_bits(codec, RT5671_ASRC_1, 0x2, 0);
+		snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x2, 0);
 		break;
 	}
 
@@ -850,15 +848,14 @@ static int rt5671_ad_monor_asrc_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 
 	switch (ucontrol->value.integer.value[0]) {
 	case 1 ... 4: /*enable*/
-		if (snd_soc_read(codec, RT5671_PWR_DIG2) & RT5671_PWR_ADC_MF_R)
-			snd_soc_update_bits(codec, RT5671_ASRC_1, 0x1, 0x1);
+		if (snd_soc_component_read32(component, RT5671_PWR_DIG2) & RT5671_PWR_ADC_MF_R)
+			snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x1, 0x1);
 		break;
 	default: /*disable*/
-		snd_soc_update_bits(codec, RT5671_ASRC_1, 0x1, 0);
+		snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x1, 0);
 		break;
 	}
 
@@ -869,15 +866,14 @@ static int rt5671_da_monol_asrc_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 
 	switch (ucontrol->value.integer.value[0]) {
 	case 1 ... 4: /*enable*/
-		if (snd_soc_read(codec, RT5671_PWR_DIG2) & RT5671_PWR_DAC_MF_L)
-			snd_soc_update_bits(codec, RT5671_ASRC_1, 0x200, 0x200);
+		if (snd_soc_component_read32(component, RT5671_PWR_DIG2) & RT5671_PWR_DAC_MF_L)
+			snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x200, 0x200);
 		break;
 	default: /*disable*/
-		snd_soc_update_bits(codec, RT5671_ASRC_1, 0x200, 0);
+		snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x200, 0);
 		break;
 	}
 
@@ -888,15 +884,14 @@ static int rt5671_da_monor_asrc_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 
 	switch (ucontrol->value.integer.value[0]) {
 	case 1 ... 4: /*enable*/
-		if (snd_soc_read(codec, RT5671_PWR_DIG2) & RT5671_PWR_DAC_MF_R)
-			snd_soc_update_bits(codec, RT5671_ASRC_1, 0x100, 0x100);
+		if (snd_soc_component_read32(component, RT5671_PWR_DIG2) & RT5671_PWR_DAC_MF_R)
+			snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x100, 0x100);
 		break;
 	default: /*disable*/
-		snd_soc_update_bits(codec, RT5671_ASRC_1, 0x100, 0);
+		snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x100, 0);
 		break;
 	}
 
@@ -907,15 +902,14 @@ static int rt5671_da_sto_asrc_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 
 	switch (ucontrol->value.integer.value[0]) {
 	case 1 ... 4: /*enable*/
-		if (snd_soc_read(codec, RT5671_PWR_DIG2) & RT5671_PWR_DAC_S1F)
-			snd_soc_update_bits(codec, RT5671_ASRC_1, 0x400, 0x400);
+		if (snd_soc_component_read32(component, RT5671_PWR_DIG2) & RT5671_PWR_DAC_S1F)
+			snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x400, 0x400);
 		break;
 	default: /*disable*/
-		snd_soc_update_bits(codec, RT5671_ASRC_1, 0x400, 0);
+		snd_soc_component_update_bits(component, RT5671_ASRC_1, 0x400, 0);
 		break;
 	}
 
@@ -932,8 +926,7 @@ static int rt5671_drc_mode_get(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 
 	ucontrol->value.integer.value[0] = rt5671->drc_mode;
 
@@ -944,8 +937,7 @@ static int rt5671_drc_mode_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 
 	rt5671->drc_mode = ucontrol->value.integer.value[0];
 
@@ -970,9 +962,8 @@ static int rt5671_push_btn_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 
-	printk(KERN_INFO "ret=0x%x\n", rt5671_button_detect(codec));
+	printk(KERN_INFO "ret=0x%x\n", rt5671_button_detect(component));
 
 	return 0;
 }
@@ -995,10 +986,9 @@ static int rt5671_jack_type_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 	int jack_insert = ucontrol->value.integer.value[0];
 
-	printk(KERN_INFO "ret=0x%x\n", rt5671_headset_detect(codec, jack_insert));
+	printk(KERN_INFO "ret=0x%x\n", rt5671_headset_detect(component, jack_insert));
 
 	return 0;
 }
@@ -1114,8 +1104,8 @@ static const struct snd_kcontrol_new rt5671_snd_controls[] = {
 static int set_dmic_clk(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 	int div[] = {2, 3, 4, 6, 8, 12}, idx = -EINVAL, i;
 	int rate, red, bound, temp;
 
@@ -1135,9 +1125,9 @@ static int set_dmic_clk(struct snd_soc_dapm_widget *w,
 	idx = 4;
 #endif
 	if (idx < 0)
-		dev_err(codec->dev, "Failed to set DMIC clock\n");
+		dev_err(component->dev, "Failed to set DMIC clock\n");
 	else
-		snd_soc_update_bits(codec, RT5671_DMIC_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_DMIC_CTRL1,
 			RT5671_DMIC_CLK_MASK, idx << RT5671_DMIC_CLK_SFT);
 	return idx;
 }
@@ -1145,18 +1135,18 @@ static int set_dmic_clk(struct snd_soc_dapm_widget *w,
 static int check_sysclk1_source(struct snd_soc_dapm_widget *source,
 			 struct snd_soc_dapm_widget *sink)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(source->dapm);
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(source->dapm);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 
 	return rt5671->sysclk_src == RT5671_SCLK_S_PLL1;
 }
 
-static int is_using_asrc(struct snd_soc_codec *codec,
+static int is_using_asrc(struct snd_soc_component *component,
 	unsigned int reg, unsigned int shift)
 {
 	unsigned int val;
 
-	val = (snd_soc_read(codec, reg) >> shift) & 0xf;
+	val = (snd_soc_component_read32(component, reg) >> shift) & 0xf;
 	pr_debug("%s: val = 0x%x\n", __func__, val);
 	switch (val) {
 	case 1:
@@ -1172,57 +1162,57 @@ static int is_using_asrc(struct snd_soc_codec *codec,
 static int check_adc_sto1_asrc_source(struct snd_soc_dapm_widget *source,
 			 struct snd_soc_dapm_widget *sink)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(source->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(source->dapm);
 
-	return is_using_asrc(codec, RT5671_ASRC_2, 0);
+	return is_using_asrc(component, RT5671_ASRC_2, 0);
 }
 
 static int check_adc_sto2_asrc_source(struct snd_soc_dapm_widget *source,
 			 struct snd_soc_dapm_widget *sink)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(source->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(source->dapm);
 
-	return is_using_asrc(codec, RT5671_ASRC_10, 12);
+	return is_using_asrc(component, RT5671_ASRC_10, 12);
 }
 
 static int check_adc_monol_asrc_source(struct snd_soc_dapm_widget *source,
 			 struct snd_soc_dapm_widget *sink)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(source->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(source->dapm);
 
-	return is_using_asrc(codec, RT5671_ASRC_3, 4);
+	return is_using_asrc(component, RT5671_ASRC_3, 4);
 }
 
 static int check_adc_monor_asrc_source(struct snd_soc_dapm_widget *source,
 			 struct snd_soc_dapm_widget *sink)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(source->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(source->dapm);
 
-	return is_using_asrc(codec, RT5671_ASRC_3, 0);
+	return is_using_asrc(component, RT5671_ASRC_3, 0);
 }
 
 static int check_dac_sto_asrc_source(struct snd_soc_dapm_widget *source,
 			 struct snd_soc_dapm_widget *sink)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(source->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(source->dapm);
 
-	return is_using_asrc(codec, RT5671_ASRC_2, 12);
+	return is_using_asrc(component, RT5671_ASRC_2, 12);
 }
 
 static int check_dac_monol_asrc_source(struct snd_soc_dapm_widget *source,
 			 struct snd_soc_dapm_widget *sink)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(source->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(source->dapm);
 
-	return is_using_asrc(codec, RT5671_ASRC_2, 8);
+	return is_using_asrc(component, RT5671_ASRC_2, 8);
 }
 
 static int check_dac_monor_asrc_source(struct snd_soc_dapm_widget *source,
 			 struct snd_soc_dapm_widget *sink)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(source->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(source->dapm);
 
-	return is_using_asrc(codec, RT5671_ASRC_2, 4);
+	return is_using_asrc(component, RT5671_ASRC_2, 4);
 }
 
 /* Digital Mixer */
@@ -1924,16 +1914,16 @@ static const struct snd_kcontrol_new rt5671_vad_adc_mux =
 static int rt5671_adc_clk_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		rt5671_index_update_bits(codec,
+		rt5671_index_update_bits(component,
 			RT5671_CHOP_DAC_ADC, 0x1000, 0x1000);
 		break;
 
 	case SND_SOC_DAPM_POST_PMD:
-		rt5671_index_update_bits(codec,
+		rt5671_index_update_bits(component,
 			RT5671_CHOP_DAC_ADC, 0x1000, 0x0000);
 		break;
 
@@ -1947,15 +1937,15 @@ static int rt5671_adc_clk_event(struct snd_soc_dapm_widget *w,
 static int rt5671_sto1_adcl_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_STO1_ADC_DIG_VOL,
+		snd_soc_component_update_bits(component, RT5671_STO1_ADC_DIG_VOL,
 			RT5671_L_MUTE, 0);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_STO1_ADC_DIG_VOL,
+		snd_soc_component_update_bits(component, RT5671_STO1_ADC_DIG_VOL,
 			RT5671_L_MUTE,
 			RT5671_L_MUTE);
 		break;
@@ -1970,15 +1960,15 @@ static int rt5671_sto1_adcl_event(struct snd_soc_dapm_widget *w,
 static int rt5671_sto1_adcr_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_STO1_ADC_DIG_VOL,
+		snd_soc_component_update_bits(component, RT5671_STO1_ADC_DIG_VOL,
 			RT5671_R_MUTE, 0);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_STO1_ADC_DIG_VOL,
+		snd_soc_component_update_bits(component, RT5671_STO1_ADC_DIG_VOL,
 			RT5671_R_MUTE,
 			RT5671_R_MUTE);
 		break;
@@ -1993,15 +1983,15 @@ static int rt5671_sto1_adcr_event(struct snd_soc_dapm_widget *w,
 static int rt5671_mono_adcl_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_MONO_ADC_DIG_VOL,
+		snd_soc_component_update_bits(component, RT5671_MONO_ADC_DIG_VOL,
 			RT5671_L_MUTE, 0);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_MONO_ADC_DIG_VOL,
+		snd_soc_component_update_bits(component, RT5671_MONO_ADC_DIG_VOL,
 			RT5671_L_MUTE,
 			RT5671_L_MUTE);
 		break;
@@ -2016,15 +2006,15 @@ static int rt5671_mono_adcl_event(struct snd_soc_dapm_widget *w,
 static int rt5671_mono_adcr_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_MONO_ADC_DIG_VOL,
+		snd_soc_component_update_bits(component, RT5671_MONO_ADC_DIG_VOL,
 			RT5671_R_MUTE, 0);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_MONO_ADC_DIG_VOL,
+		snd_soc_component_update_bits(component, RT5671_MONO_ADC_DIG_VOL,
 			RT5671_R_MUTE,
 			RT5671_R_MUTE);
 		break;
@@ -2036,74 +2026,74 @@ static int rt5671_mono_adcr_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
-static void hp_amp_power(struct snd_soc_codec *codec, int on)
+static void hp_amp_power(struct snd_soc_component *component, int on)
 {
 	if (on) {
-		snd_soc_update_bits(codec, RT5671_CHARGE_PUMP,
+		snd_soc_component_update_bits(component, RT5671_CHARGE_PUMP,
 			RT5671_PM_HP_MASK, RT5671_PM_HP_HV);
 		/* headphone amp power on */
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG1,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG1,
 			RT5671_PWR_HA |	RT5671_PWR_FV1 |
 			RT5671_PWR_FV2,	RT5671_PWR_HA |
 			RT5671_PWR_FV1 | RT5671_PWR_FV2);
 		/* depop parameters */
-		snd_soc_write(codec, RT5671_DEPOP_M2, 0x3100);
-		snd_soc_write(codec, RT5671_DEPOP_M1, 0x8009);
-		rt5671_index_write(codec, RT5671_HP_DCC_INT1, 0x9f00);
+		snd_soc_component_write(component, RT5671_DEPOP_M2, 0x3100);
+		snd_soc_component_write(component, RT5671_DEPOP_M1, 0x8009);
+		rt5671_index_write(component, RT5671_HP_DCC_INT1, 0x9f00);
 		pr_debug("hp_amp_time=%d\n",hp_amp_time);
 		msleep(hp_amp_time);
-		snd_soc_write(codec, RT5671_DEPOP_M1, 0x8019);
+		snd_soc_component_write(component, RT5671_DEPOP_M1, 0x8019);
 	} else {
-		snd_soc_write(codec, RT5671_DEPOP_M1, 0x0004);
+		snd_soc_component_write(component, RT5671_DEPOP_M1, 0x0004);
 		msleep(30);
 	}
 }
 
-static void rt5671_pmu_depop(struct snd_soc_codec *codec)
+static void rt5671_pmu_depop(struct snd_soc_component *component)
 {
 	/* headphone unmute sequence */
-	rt5671_index_write(codec, RT5671_MAMP_INT_REG2, 0xb400);
-	snd_soc_write(codec, RT5671_DEPOP_M3, 0x0772);
-	snd_soc_write(codec, RT5671_DEPOP_M1, 0x805d);
-	snd_soc_write(codec, RT5671_DEPOP_M1, 0x831d);
-	snd_soc_update_bits(codec, RT5671_GEN_CTRL2,
+	rt5671_index_write(component, RT5671_MAMP_INT_REG2, 0xb400);
+	snd_soc_component_write(component, RT5671_DEPOP_M3, 0x0772);
+	snd_soc_component_write(component, RT5671_DEPOP_M1, 0x805d);
+	snd_soc_component_write(component, RT5671_DEPOP_M1, 0x831d);
+	snd_soc_component_update_bits(component, RT5671_GEN_CTRL2,
 				0x0300, 0x0300);
-	snd_soc_update_bits(codec, RT5671_HP_VOL,
+	snd_soc_component_update_bits(component, RT5671_HP_VOL,
 		RT5671_L_MUTE | RT5671_R_MUTE, 0);
 	pr_debug("pmu_depop_time=%d\n",pmu_depop_time);
 	msleep(pmu_depop_time);
-	snd_soc_write(codec, RT5671_DEPOP_M1, 0x8019);
+	snd_soc_component_write(component, RT5671_DEPOP_M1, 0x8019);
 }
 
-static void rt5671_pmd_depop(struct snd_soc_codec *codec)
+static void rt5671_pmd_depop(struct snd_soc_component *component)
 {
 	/* headphone mute sequence */
-	rt5671_index_write(codec, RT5671_MAMP_INT_REG2, 0xb400);
-	snd_soc_write(codec, RT5671_DEPOP_M3, 0x0772);
-	snd_soc_write(codec, RT5671_DEPOP_M1, 0x803d);
+	rt5671_index_write(component, RT5671_MAMP_INT_REG2, 0xb400);
+	snd_soc_component_write(component, RT5671_DEPOP_M3, 0x0772);
+	snd_soc_component_write(component, RT5671_DEPOP_M1, 0x803d);
 	msleep(10);
-	snd_soc_write(codec, RT5671_DEPOP_M1, 0x831d);
+	snd_soc_component_write(component, RT5671_DEPOP_M1, 0x831d);
 	msleep(10);
-	snd_soc_update_bits(codec, RT5671_HP_VOL,
+	snd_soc_component_update_bits(component, RT5671_HP_VOL,
 		RT5671_L_MUTE | RT5671_R_MUTE, RT5671_L_MUTE | RT5671_R_MUTE);
 	msleep(20);
-	snd_soc_update_bits(codec, RT5671_GEN_CTRL2, 0x0300, 0x0);
-	snd_soc_write(codec, RT5671_DEPOP_M1, 0x8019);
-	snd_soc_write(codec, RT5671_DEPOP_M3, 0x0707);
-	rt5671_index_write(codec, RT5671_MAMP_INT_REG2, 0xfc00);
+	snd_soc_component_update_bits(component, RT5671_GEN_CTRL2, 0x0300, 0x0);
+	snd_soc_component_write(component, RT5671_DEPOP_M1, 0x8019);
+	snd_soc_component_write(component, RT5671_DEPOP_M3, 0x0707);
+	rt5671_index_write(component, RT5671_MAMP_INT_REG2, 0xfc00);
 }
 
 static int rt5671_hp_power_event(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		hp_amp_power(codec, 1);
+		hp_amp_power(component, 1);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-		hp_amp_power(codec, 0);
+		hp_amp_power(component, 0);
 		break;
 	default:
 		return 0;
@@ -2115,15 +2105,15 @@ static int rt5671_hp_power_event(struct snd_soc_dapm_widget *w,
 static int rt5671_hp_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		rt5671_pmu_depop(codec);
+		rt5671_pmu_depop(component);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		rt5671_pmd_depop(codec);
+		rt5671_pmd_depop(component);
 		break;
 
 	default:
@@ -2136,16 +2126,16 @@ static int rt5671_hp_event(struct snd_soc_dapm_widget *w,
 static int rt5671_mono_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_MONO_OUT,
+		snd_soc_component_update_bits(component, RT5671_MONO_OUT,
 				RT5671_L_MUTE, 0);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_MONO_OUT,
+		snd_soc_component_update_bits(component, RT5671_MONO_OUT,
 			RT5671_L_MUTE, RT5671_L_MUTE);
 		break;
 
@@ -2159,18 +2149,18 @@ static int rt5671_mono_event(struct snd_soc_dapm_widget *w,
 static int rt5671_lout_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_CHARGE_PUMP,
+		snd_soc_component_update_bits(component, RT5671_CHARGE_PUMP,
 			RT5671_PM_HP_MASK, RT5671_PM_HP_HV);
-		snd_soc_update_bits(codec, RT5671_LOUT1,
+		snd_soc_component_update_bits(component, RT5671_LOUT1,
 			RT5671_L_MUTE | RT5671_R_MUTE, 0);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_LOUT1,
+		snd_soc_component_update_bits(component, RT5671_LOUT1,
 			RT5671_L_MUTE | RT5671_R_MUTE,
 			RT5671_L_MUTE | RT5671_R_MUTE);
 		break;
@@ -2185,23 +2175,23 @@ static int rt5671_lout_event(struct snd_soc_dapm_widget *w,
 static int rt5671_set_dmic1_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
 #ifdef NVIDIA_DALMORE
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST1 | RT5671_PWR_BST1_P,
 			RT5671_PWR_BST1 | RT5671_PWR_BST1_P);
-		snd_soc_update_bits(codec, RT5671_CJ_CTRL2,
+		snd_soc_component_update_bits(component, RT5671_CJ_CTRL2,
 			RT5671_CBJ_DET_MODE, RT5671_CBJ_DET_MODE);
 #endif
-		snd_soc_update_bits(codec, RT5671_GPIO_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_GPIO_CTRL1,
 			RT5671_GP2_PIN_MASK | RT5671_GP6_PIN_MASK |
 			RT5671_I2S2_PIN_MASK,
 			RT5671_GP2_PIN_DMIC1_SCL | RT5671_GP6_PIN_DMIC1_SDA |
 			RT5671_I2S2_PIN_GPIO);
-		snd_soc_update_bits(codec, RT5671_DMIC_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_DMIC_CTRL1,
 			RT5671_DMIC_1L_LH_MASK | RT5671_DMIC_1R_LH_MASK |
 			RT5671_DMIC_1_DP_MASK,
 			RT5671_DMIC_1L_LH_FALLING | RT5671_DMIC_1R_LH_RISING |
@@ -2209,9 +2199,9 @@ static int rt5671_set_dmic1_event(struct snd_soc_dapm_widget *w,
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 #ifdef NVIDIA_DALMORE
-		snd_soc_update_bits(codec, RT5671_CJ_CTRL2, RT5671_CBJ_DET_MODE,
+		snd_soc_component_update_bits(component, RT5671_CJ_CTRL2, RT5671_CBJ_DET_MODE,
 			0);
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST1 | RT5671_PWR_BST1_P, 0);
 #endif
 		break;
@@ -2225,14 +2215,14 @@ static int rt5671_set_dmic1_event(struct snd_soc_dapm_widget *w,
 static int rt5671_set_dmic2_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
-		snd_soc_update_bits(codec, RT5671_GPIO_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_GPIO_CTRL1,
 			RT5671_GP2_PIN_MASK | RT5671_GP4_PIN_MASK,
 			RT5671_GP2_PIN_DMIC1_SCL | RT5671_GP4_PIN_DMIC2_SDA);
-		snd_soc_update_bits(codec, RT5671_DMIC_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_DMIC_CTRL1,
 			RT5671_DMIC_2L_LH_MASK | RT5671_DMIC_2R_LH_MASK |
 			RT5671_DMIC_2_DP_MASK,
 			RT5671_DMIC_2L_LH_FALLING | RT5671_DMIC_2R_LH_RISING |
@@ -2252,14 +2242,14 @@ static int rt5671_set_dmic2_event(struct snd_soc_dapm_widget *w,
 static int rt5671_set_dmic3_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
-		snd_soc_update_bits(codec, RT5671_GPIO_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_GPIO_CTRL1,
 			RT5671_GP2_PIN_MASK | RT5671_GP4_PIN_MASK,
 			RT5671_GP2_PIN_DMIC1_SCL | RT5671_GP4_PIN_DMIC2_SDA);
-		snd_soc_update_bits(codec, RT5671_DMIC_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_DMIC_CTRL1,
 			RT5671_DMIC_2L_LH_MASK | RT5671_DMIC_2R_LH_MASK |
 			RT5671_DMIC_2_DP_MASK,
 			RT5671_DMIC_2L_LH_FALLING | RT5671_DMIC_2R_LH_RISING |
@@ -2279,27 +2269,27 @@ static int rt5671_set_dmic3_event(struct snd_soc_dapm_widget *w,
 static int rt5671_bst1_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_CHARGE_PUMP,
+		snd_soc_component_update_bits(component, RT5671_CHARGE_PUMP,
 			RT5671_OSW_L_MASK | RT5671_OSW_R_MASK,
 			RT5671_OSW_L_DIS | RT5671_OSW_R_DIS);
 
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST1_P, RT5671_PWR_BST1_P);
 		if (rt5671->combo_jack_en) {
-			snd_soc_update_bits(codec, RT5671_PWR_VOL,
+			snd_soc_component_update_bits(component, RT5671_PWR_VOL,
 				RT5671_PWR_MIC_DET, RT5671_PWR_MIC_DET);
-			snd_soc_update_bits(codec, RT5671_GEN_CTRL2, 0x2, 0x0);
+			snd_soc_component_update_bits(component, RT5671_GEN_CTRL2, 0x2, 0x0);
 		}
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_GEN_CTRL2, 0x2, 0x2);
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_GEN_CTRL2, 0x2, 0x2);
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST1_P, 0);
 		break;
 
@@ -2313,16 +2303,16 @@ static int rt5671_bst1_event(struct snd_soc_dapm_widget *w,
 static int rt5671_bst2_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST2_P, RT5671_PWR_BST2_P);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST2_P, 0);
 		break;
 
@@ -2336,16 +2326,16 @@ static int rt5671_bst2_event(struct snd_soc_dapm_widget *w,
 static int rt5671_bst3_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST3_P, RT5671_PWR_BST3_P);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST3_P, 0);
 		break;
 
@@ -2359,16 +2349,16 @@ static int rt5671_bst3_event(struct snd_soc_dapm_widget *w,
 static int rt5671_bst4_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST4_P, RT5671_PWR_BST4_P);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST4_P, 0);
 		break;
 
@@ -2382,16 +2372,16 @@ static int rt5671_bst4_event(struct snd_soc_dapm_widget *w,
 static int rt5671_pdm1_l_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_PDM_OUT_CTRL,
+		snd_soc_component_update_bits(component, RT5671_PDM_OUT_CTRL,
 			RT5671_M_PDM1_L, 0);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_PDM_OUT_CTRL,
+		snd_soc_component_update_bits(component, RT5671_PDM_OUT_CTRL,
 			RT5671_M_PDM1_L, RT5671_M_PDM1_L);
 		break;
 
@@ -2405,16 +2395,16 @@ static int rt5671_pdm1_l_event(struct snd_soc_dapm_widget *w,
 static int rt5671_pdm1_r_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_PDM_OUT_CTRL,
+		snd_soc_component_update_bits(component, RT5671_PDM_OUT_CTRL,
 			RT5671_M_PDM1_R, 0);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_PDM_OUT_CTRL,
+		snd_soc_component_update_bits(component, RT5671_PDM_OUT_CTRL,
 			RT5671_M_PDM1_R, RT5671_M_PDM1_R);
 		break;
 
@@ -2428,16 +2418,16 @@ static int rt5671_pdm1_r_event(struct snd_soc_dapm_widget *w,
 static int rt5671_pdm2_l_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_PDM_OUT_CTRL,
+		snd_soc_component_update_bits(component, RT5671_PDM_OUT_CTRL,
 			RT5671_M_PDM2_L, 0);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_PDM_OUT_CTRL,
+		snd_soc_component_update_bits(component, RT5671_PDM_OUT_CTRL,
 			RT5671_M_PDM2_L, RT5671_M_PDM2_L);
 		break;
 
@@ -2451,16 +2441,16 @@ static int rt5671_pdm2_l_event(struct snd_soc_dapm_widget *w,
 static int rt5671_pdm2_r_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		snd_soc_update_bits(codec, RT5671_PDM_OUT_CTRL,
+		snd_soc_component_update_bits(component, RT5671_PDM_OUT_CTRL,
 			RT5671_M_PDM2_R, 0);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, RT5671_PDM_OUT_CTRL,
+		snd_soc_component_update_bits(component, RT5671_PDM_OUT_CTRL,
 			RT5671_M_PDM2_R, RT5671_M_PDM2_R);
 		break;
 
@@ -2474,18 +2464,18 @@ static int rt5671_pdm2_r_event(struct snd_soc_dapm_widget *w,
 static int rt5671_drc_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
 		if (rt5671->drc_mode)
-			snd_soc_write(codec, RT5671_ALC_CTRL_1, 0xe206);
+			snd_soc_component_write(component, RT5671_ALC_CTRL_1, 0xe206);
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_write(codec, RT5671_ALC_CTRL_1, 0x2206); /*MX-B4*/
+		snd_soc_component_write(component, RT5671_ALC_CTRL_1, 0x2206); /*MX-B4*/
 		break;
 
 	default:
@@ -3433,15 +3423,15 @@ static int get_clk_info(int sclk, int rate)
 static int rt5671_hw_params(struct snd_pcm_substream *substream,
 	struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
 {
-	struct snd_soc_codec *codec = dai->codec;
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = dai->component;
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 	unsigned int val = 0, val_clk, mask_clk;
 	int pre_div, bclk_ms;
 
 	rt5671->lrck[dai->id] = params_rate(params);
 	pre_div = get_clk_info(rt5671->sysclk, rt5671->lrck[dai->id]);
 	if (pre_div < 0) {
-		dev_err(codec->dev, "Unsupported clock setting\n");
+		dev_err(component->dev, "Unsupported clock setting\n");
 		return -EINVAL;
 	}
 	
@@ -3479,33 +3469,33 @@ static int rt5671_hw_params(struct snd_pcm_substream *substream,
 	case RT5671_AIF1:
 		mask_clk = RT5671_I2S_PD1_MASK;
 		val_clk = pre_div << RT5671_I2S_PD1_SFT;
-		snd_soc_update_bits(codec, RT5671_I2S1_SDP,
+		snd_soc_component_update_bits(component, RT5671_I2S1_SDP,
 			RT5671_I2S_DL_MASK | RT5671_I2S_MS_MASK, val);
-		snd_soc_update_bits(codec, RT5671_ADDA_CLK1, mask_clk, val_clk);
+		snd_soc_component_update_bits(component, RT5671_ADDA_CLK1, mask_clk, val_clk);
 		break;
 	case RT5671_AIF2:
 		mask_clk = RT5671_I2S_BCLK_MS2_MASK | RT5671_I2S_PD2_MASK;
 		val_clk = bclk_ms << RT5671_I2S_BCLK_MS2_SFT |
 			pre_div << RT5671_I2S_PD2_SFT;
-		snd_soc_update_bits(codec, RT5671_I2S2_SDP,
+		snd_soc_component_update_bits(component, RT5671_I2S2_SDP,
 			RT5671_I2S_DL_MASK | RT5671_I2S_MS_MASK, val);
-		snd_soc_update_bits(codec, RT5671_ADDA_CLK1, mask_clk, val_clk);
+		snd_soc_component_update_bits(component, RT5671_ADDA_CLK1, mask_clk, val_clk);
 		break;
 	case RT5671_AIF3:
 		mask_clk = RT5671_I2S_BCLK_MS3_MASK | RT5671_I2S_PD3_MASK;
 		val_clk = bclk_ms << RT5671_I2S_BCLK_MS3_SFT |
 			pre_div << RT5671_I2S_PD3_SFT;
-		snd_soc_update_bits(codec, RT5671_I2S3_SDP,
+		snd_soc_component_update_bits(component, RT5671_I2S3_SDP,
 			RT5671_I2S_DL_MASK | RT5671_I2S_MS_MASK, val);
-		snd_soc_update_bits(codec, RT5671_ADDA_CLK1, mask_clk, val_clk);
+		snd_soc_component_update_bits(component, RT5671_ADDA_CLK1, mask_clk, val_clk);
 		break;
 	case RT5671_AIF4:
 		mask_clk = RT5671_I2S_BCLK_MS4_MASK | RT5671_I2S_PD4_MASK;
 		val_clk = bclk_ms << RT5671_I2S_BCLK_MS4_SFT |
 			pre_div << RT5671_I2S_PD4_SFT;
-		snd_soc_update_bits(codec, RT5671_I2S4_SDP,
+		snd_soc_component_update_bits(component, RT5671_I2S4_SDP,
 			RT5671_I2S_DL_MASK | RT5671_I2S_MS_MASK, val);
-		snd_soc_update_bits(codec, RT5671_DSP_CLK, mask_clk, val_clk);
+		snd_soc_component_update_bits(component, RT5671_DSP_CLK, mask_clk, val_clk);
 		break;
 	}
 
@@ -3515,24 +3505,24 @@ static int rt5671_hw_params(struct snd_pcm_substream *substream,
 static void rt5671_shutdown(struct snd_pcm_substream *substream,
 	struct snd_soc_dai *dai)
 {
-	struct snd_soc_codec *codec = dai->codec;
+	struct snd_soc_component *component = dai->component;
 
 	if (!dai->active) {
 		switch (dai->id) {
 		case RT5671_AIF1:
-			snd_soc_update_bits(codec, RT5671_I2S1_SDP,
+			snd_soc_component_update_bits(component, RT5671_I2S1_SDP,
 					RT5671_I2S_MS_MASK, RT5671_I2S_MS_S);
 			break;
 		case RT5671_AIF2:
-			snd_soc_update_bits(codec, RT5671_I2S2_SDP,
+			snd_soc_component_update_bits(component, RT5671_I2S2_SDP,
 					RT5671_I2S_MS_MASK, RT5671_I2S_MS_S);
 			break;
 		case RT5671_AIF3:
-			snd_soc_update_bits(codec, RT5671_I2S3_SDP,
+			snd_soc_component_update_bits(component, RT5671_I2S3_SDP,
 					RT5671_I2S_MS_MASK, RT5671_I2S_MS_S);
 			break;
 		case RT5671_AIF4:
-			snd_soc_update_bits(codec, RT5671_I2S4_SDP,
+			snd_soc_component_update_bits(component, RT5671_I2S4_SDP,
 					RT5671_I2S_MS_MASK, RT5671_I2S_MS_S);
 			break;
 		}
@@ -3542,8 +3532,8 @@ static void rt5671_shutdown(struct snd_pcm_substream *substream,
 static int rt5671_prepare(struct snd_pcm_substream *substream,
 				struct snd_soc_dai *dai)
 {
-	struct snd_soc_codec *codec = dai->codec;
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = dai->component;
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 
 	rt5671->aif_pu = dai->id;
 	return 0;
@@ -3551,8 +3541,8 @@ static int rt5671_prepare(struct snd_pcm_substream *substream,
 
 static int rt5671_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 {
-	struct snd_soc_codec *codec = dai->codec;
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = dai->component;
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 	unsigned int reg_val = 0;
 
 	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
@@ -3594,22 +3584,22 @@ static int rt5671_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 
 	switch (dai->id) {
 	case RT5671_AIF1:
-		snd_soc_update_bits(codec, RT5671_I2S1_SDP,
+		snd_soc_component_update_bits(component, RT5671_I2S1_SDP,
 			RT5671_I2S_BP_MASK |
 			RT5671_I2S_DF_MASK, reg_val);
 		break;
 	case RT5671_AIF2:
-		snd_soc_update_bits(codec, RT5671_I2S2_SDP,
+		snd_soc_component_update_bits(component, RT5671_I2S2_SDP,
 			RT5671_I2S_BP_MASK |
 			RT5671_I2S_DF_MASK, reg_val);
 		break;
 	case RT5671_AIF3:
-		snd_soc_update_bits(codec, RT5671_I2S3_SDP,
+		snd_soc_component_update_bits(component, RT5671_I2S3_SDP,
 			RT5671_I2S_BP_MASK |
 			RT5671_I2S_DF_MASK, reg_val);
 		break;
 	case RT5671_AIF4:
-		snd_soc_update_bits(codec, RT5671_I2S4_SDP,
+		snd_soc_component_update_bits(component, RT5671_I2S4_SDP,
 			RT5671_I2S_BP_MASK |
 			RT5671_I2S_DF_MASK, reg_val);
 		break;
@@ -3618,11 +3608,10 @@ static int rt5671_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 	return 0;
 }
 
-static int rt5671_set_dai_sysclk(struct snd_soc_dai *dai,
-		int clk_id, unsigned int freq, int dir)
+static int rt5671_set_sysclk(struct snd_soc_component *component,
+	int source, int clk_id, unsigned int freq, int dir)
 {
-	struct snd_soc_codec *codec = dai->codec;
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 	unsigned int reg_val = 0;
 
 	if (freq == rt5671->sysclk && clk_id == rt5671->sysclk_src)
@@ -3639,16 +3628,16 @@ static int rt5671_set_dai_sysclk(struct snd_soc_dai *dai,
 		reg_val |= RT5671_SCLK_SRC_RCCLK;
 		break;
 	default:
-		dev_err(codec->dev, "Invalid clock id (%d)\n", clk_id);
+		dev_err(component->dev, "Invalid clock id (%d)\n", clk_id);
 		return -EINVAL;
 	}
-	snd_soc_update_bits(codec, RT5671_GLB_CLK,
+	snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 		RT5671_SCLK_SRC_MASK, reg_val);
 
 	rt5671->sysclk = freq;
 	rt5671->sysclk_src = clk_id;
 
-	dev_dbg(dai->dev, "Sysclk is %dHz and clock id is %d\n", freq, clk_id);
+	dev_dbg(component->dev, "Sysclk is %dHz and clock id is %d\n", freq, clk_id);
 
 	return 0;
 }
@@ -3724,8 +3713,8 @@ code_find:
 static int rt5671_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 			unsigned int freq_in, unsigned int freq_out)
 {
-	struct snd_soc_codec *codec = dai->codec;
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = dai->component;
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
 	struct rt5671_pll_code pll_code;
 	int ret;
 
@@ -3734,54 +3723,54 @@ static int rt5671_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 		return 0;
 
 	if (!freq_in || !freq_out) {
-		dev_dbg(codec->dev, "PLL disabled\n");
+		dev_dbg(component->dev, "PLL disabled\n");
 
 		rt5671->pll_in = 0;
 		rt5671->pll_out = 0;
-		snd_soc_update_bits(codec, RT5671_GLB_CLK,
+		snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 			RT5671_SCLK_SRC_MASK, RT5671_SCLK_SRC_MCLK);
 		return 0;
 	}
 
 	switch (source) {
 	case RT5671_PLL1_S_MCLK:
-		snd_soc_update_bits(codec, RT5671_GLB_CLK,
+		snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 			RT5671_PLL1_SRC_MASK, RT5671_PLL1_SRC_MCLK);
 		break;
 	case RT5671_PLL1_S_BCLK1:
-		snd_soc_update_bits(codec, RT5671_GLB_CLK,
+		snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 			RT5671_PLL1_SRC_MASK, RT5671_PLL1_SRC_BCLK1);
 		break;
 	case RT5671_PLL1_S_BCLK2:
-		snd_soc_update_bits(codec, RT5671_GLB_CLK,
+		snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 			RT5671_PLL1_SRC_MASK, RT5671_PLL1_SRC_BCLK2);
 		break;
 	case RT5671_PLL1_S_BCLK3:
-		snd_soc_update_bits(codec, RT5671_GLB_CLK,
+		snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 			RT5671_PLL1_SRC_MASK, RT5671_PLL1_SRC_BCLK3);
 		break;
 	case RT5671_PLL1_S_BCLK4:
-		snd_soc_update_bits(codec, RT5671_GLB_CLK,
+		snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 			RT5671_PLL1_SRC_MASK, RT5671_PLL1_SRC_BCLK4);
 		break;
 	default:
-		dev_err(codec->dev, "Unknown PLL source %d\n", source);
+		dev_err(component->dev, "Unknown PLL source %d\n", source);
 		return -EINVAL;
 	}
 
 	ret = rt5671_pll_calc(freq_in, freq_out, &pll_code);
 	if (ret < 0) {
-		dev_err(codec->dev, "Unsupport input clock %d\n", freq_in);
+		dev_err(component->dev, "Unsupport input clock %d\n", freq_in);
 		return ret;
 	}
 
-	dev_dbg(codec->dev, "bypass=%d m=%d n=%d k=%d\n",
+	dev_dbg(component->dev, "bypass=%d m=%d n=%d k=%d\n",
 		pll_code.m_bp, (pll_code.m_bp ? 0 : pll_code.m_code),
 		pll_code.n_code, pll_code.k_code);
 
-	snd_soc_write(codec, RT5671_PLL_CTRL1,
+	snd_soc_component_write(component, RT5671_PLL_CTRL1,
 		pll_code.n_code << RT5671_PLL_N_SFT | pll_code.k_code);
-	snd_soc_write(codec, RT5671_PLL_CTRL2,
+	snd_soc_component_write(component, RT5671_PLL_CTRL2,
 		(pll_code.m_bp ? 0 : pll_code.m_code) << RT5671_PLL_M_SFT |
 		pll_code.m_bp << RT5671_PLL_M_BP_SFT);
 
@@ -3794,7 +3783,7 @@ static int rt5671_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 
 /**
  * rt5671_index_show - Dump private registers.
- * @dev: codec device.
+ * @dev: component device.
  * @attr: device attribute.
  * @buf: buffer for display.
  *
@@ -3807,7 +3796,7 @@ static ssize_t rt5671_index_show(struct device *dev,
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt5671_priv *rt5671 = i2c_get_clientdata(client);
-	struct snd_soc_codec *codec = rt5671->codec;
+	struct snd_soc_component *component = rt5671->component;
 	unsigned int val;
 	int cnt = 0, i;
 
@@ -3815,7 +3804,7 @@ static ssize_t rt5671_index_show(struct device *dev,
 	for (i = 0; i < 0xff; i++) {
 		if (cnt + RT5671_REG_DISP_LEN >= PAGE_SIZE)
 			break;
-		val = rt5671_index_read(codec, i);
+		val = rt5671_index_read(component, i);
 		if (!val)
 			continue;
 		cnt += snprintf(buf + cnt, RT5671_REG_DISP_LEN,
@@ -3833,7 +3822,7 @@ static ssize_t rt5671_index_store(struct device *dev,
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt5671_priv *rt5671 = i2c_get_clientdata(client);
-	struct snd_soc_codec *codec = rt5671->codec;
+	struct snd_soc_component *component = rt5671->component;
 	unsigned int val = 0, addr = 0;
 	int i;
 
@@ -3864,9 +3853,9 @@ static ssize_t rt5671_index_store(struct device *dev,
 
 	if (i == count)
 		pr_debug("0x%02x = 0x%04x\n", addr,
-			rt5671_index_read(codec, addr));
+			rt5671_index_read(component, addr));
 	else
-		rt5671_index_write(codec, addr, val);
+		rt5671_index_write(component, addr, val);
 
 
 	return count;
@@ -3878,23 +3867,21 @@ static ssize_t rt5671_codec_show(struct device *dev,
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt5671_priv *rt5671 = i2c_get_clientdata(client);
-	struct snd_soc_codec *codec = rt5671->codec;
+	struct snd_soc_component *component = rt5671->component;
 	unsigned int val;
 	int cnt = 0, i;
 
-	codec->cache_bypass = 1;
 	for (i = 0; i <= RT5671_VENDOR_ID2; i++) {
 		if (cnt + RT5671_REG_DISP_LEN >= PAGE_SIZE)
 			break;
 
 		if (rt5671_readable_register(dev, i)) {
-			val = snd_soc_read(codec, i);
+			val = snd_soc_component_read32(component, i);
 
 			cnt += snprintf(buf + cnt, RT5671_REG_DISP_LEN,
 					"%04x: %04x\n", i, val);
 		}
 	}
-	codec->cache_bypass = 0;
 
 	if (cnt >= PAGE_SIZE)
 		cnt = PAGE_SIZE - 1;
@@ -3907,7 +3894,7 @@ static ssize_t rt5671_codec_store(struct device *dev,
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt5671_priv *rt5671 = i2c_get_clientdata(client);
-	struct snd_soc_codec *codec = rt5671->codec;
+	struct snd_soc_component *component = rt5671->component;
 	unsigned int val = 0, addr = 0;
 	int i;
 
@@ -3939,60 +3926,61 @@ static ssize_t rt5671_codec_store(struct device *dev,
 
 	if (i == count)
 		pr_debug("0x%02x = 0x%04x\n", addr,
-			snd_soc_read(codec, addr));
+			snd_soc_component_read32(component, addr));
 	else
-		snd_soc_write(codec, addr, val);
+		snd_soc_component_write(component, addr, val);
 
 	return count;
 }
 static DEVICE_ATTR(codec_reg, 0664, rt5671_codec_show, rt5671_codec_store);
 
-static int rt5671_set_bias_level(struct snd_soc_codec *codec,
+static int rt5671_set_bias_level(struct snd_soc_component *component,
 			enum snd_soc_bias_level level)
 {
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
+
 	switch (level) {
 	case SND_SOC_BIAS_ON:
 		break;
 
 	case SND_SOC_BIAS_PREPARE:
-		snd_soc_update_bits(codec, RT5671_CHARGE_PUMP,
+		snd_soc_component_update_bits(component, RT5671_CHARGE_PUMP,
 			RT5671_OSW_L_MASK | RT5671_OSW_R_MASK,
 			RT5671_OSW_L_DIS | RT5671_OSW_R_DIS);
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG1,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG1,
 				RT5671_LDO_SEL_MASK, 0x3);
-		if (SND_SOC_BIAS_STANDBY == snd_soc_codec_get_bias_level(codec)) {
-			snd_soc_update_bits(codec, RT5671_PWR_ANLG1,
+		if (SND_SOC_BIAS_STANDBY == snd_soc_component_get_bias_level(component)) {
+			snd_soc_component_update_bits(component, RT5671_PWR_ANLG1,
 				RT5671_PWR_VREF1 | RT5671_PWR_MB |
 				RT5671_PWR_BG | RT5671_PWR_VREF2,
 				RT5671_PWR_VREF1 | RT5671_PWR_MB |
 				RT5671_PWR_BG | RT5671_PWR_VREF2);
 			msleep(10);
-			snd_soc_update_bits(codec, RT5671_PWR_ANLG1,
+			snd_soc_component_update_bits(component, RT5671_PWR_ANLG1,
 				RT5671_PWR_FV1 | RT5671_PWR_FV2,
 				RT5671_PWR_FV1 | RT5671_PWR_FV2);
-			snd_soc_update_bits(codec, RT5671_GEN_CTRL1, 0x1, 0x1);
+			snd_soc_component_update_bits(component, RT5671_GEN_CTRL1, 0x1, 0x1);
 			switch (rt5671->sysclk_src) {
 			case RT5671_SCLK_S_MCLK:
-				snd_soc_update_bits(codec, RT5671_GLB_CLK,
+				snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 						RT5671_SCLK_SRC_MASK,
 						RT5671_SCLK_SRC_MCLK);
 				break;
 			case RT5671_SCLK_S_PLL1:
-				snd_soc_update_bits(codec, RT5671_GLB_CLK,
+				snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 						RT5671_SCLK_SRC_MASK,
 						RT5671_SCLK_SRC_PLL1);
 				break;
 			default:
 				pr_err("Invalid sysclk_src %d, use MCLK\n",
 						rt5671->sysclk_src);
-				snd_soc_update_bits(codec, RT5671_GLB_CLK,
+				snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 						RT5671_SCLK_SRC_MASK,
 						RT5671_SCLK_SRC_MCLK);
 				break;
 			}
 
-			snd_soc_update_bits(codec, RT5671_MICBIAS,
+			snd_soc_component_update_bits(component, RT5671_MICBIAS,
 				RT5671_PWR_CLK25M_MASK |
 				RT5671_PWR_MB_MASK, 0);
 		}
@@ -4003,26 +3991,26 @@ static int rt5671_set_bias_level(struct snd_soc_codec *codec,
 		break;
 
 	case SND_SOC_BIAS_OFF:
-		snd_soc_update_bits(codec, RT5671_GLB_CLK,
+		snd_soc_component_update_bits(component, RT5671_GLB_CLK,
 				RT5671_SCLK_SRC_MASK, RT5671_SCLK_SRC_RCCLK);
-		snd_soc_update_bits(codec, RT5671_MICBIAS,
+		snd_soc_component_update_bits(component, RT5671_MICBIAS,
 				RT5671_PWR_CLK25M_MASK | RT5671_PWR_MB_MASK,
 				RT5671_PWR_CLK25M_PU | RT5671_PWR_MB_PU);
-		snd_soc_update_bits(codec, RT5671_GEN_CTRL1, 0x1, 0);
+		snd_soc_component_update_bits(component, RT5671_GEN_CTRL1, 0x1, 0);
 		if (rt5671->jack_type == SND_JACK_HEADSET) {
-			snd_soc_write(codec, RT5671_PWR_DIG1, 0x0000);
-			snd_soc_write(codec, RT5671_PWR_DIG2, 0x0001);
-			snd_soc_write(codec, RT5671_PWR_VOL, 0x0020);
-			snd_soc_write(codec, RT5671_PWR_MIXER, 0x0001);
-			snd_soc_write(codec, RT5671_PWR_ANLG1, 0x2003);
-			snd_soc_write(codec, RT5671_PWR_ANLG2, 0x0404);
+			snd_soc_component_write(component, RT5671_PWR_DIG1, 0x0000);
+			snd_soc_component_write(component, RT5671_PWR_DIG2, 0x0001);
+			snd_soc_component_write(component, RT5671_PWR_VOL, 0x0020);
+			snd_soc_component_write(component, RT5671_PWR_MIXER, 0x0001);
+			snd_soc_component_write(component, RT5671_PWR_ANLG1, 0x2003);
+			snd_soc_component_write(component, RT5671_PWR_ANLG2, 0x0404);
 		} else {
-			snd_soc_write(codec, RT5671_PWR_DIG1, 0x0000);
-			snd_soc_write(codec, RT5671_PWR_DIG2, 0x0001);
-			snd_soc_write(codec, RT5671_PWR_VOL, 0x0000);
-			snd_soc_write(codec, RT5671_PWR_MIXER, 0x0001);
-			snd_soc_write(codec, RT5671_PWR_ANLG1, 0x2001);
-			snd_soc_write(codec, RT5671_PWR_ANLG2, 0x0004);
+			snd_soc_component_write(component, RT5671_PWR_DIG1, 0x0000);
+			snd_soc_component_write(component, RT5671_PWR_DIG2, 0x0001);
+			snd_soc_component_write(component, RT5671_PWR_VOL, 0x0000);
+			snd_soc_component_write(component, RT5671_PWR_MIXER, 0x0001);
+			snd_soc_component_write(component, RT5671_PWR_ANLG1, 0x2001);
+			snd_soc_component_write(component, RT5671_PWR_ANLG2, 0x0004);
 		}
 		break;
 
@@ -4033,88 +4021,88 @@ static int rt5671_set_bias_level(struct snd_soc_codec *codec,
 	return 0;
 }
 
-static int rt5671_probe(struct snd_soc_codec *codec)
+static int rt5671_probe(struct snd_soc_component *component)
 {
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
-	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	struct rt5671_priv *rt5671 = snd_soc_component_get_drvdata(component);
+	struct snd_soc_dapm_context *dapm = snd_soc_component_get_dapm(component);
 	int ret;
 
-	rt5671_reset(codec);
-	snd_soc_update_bits(codec, RT5671_PWR_ANLG1,
+	rt5671_reset(component);
+	snd_soc_component_update_bits(component, RT5671_PWR_ANLG1,
 		RT5671_PWR_HP_L | RT5671_PWR_HP_R |
 		RT5671_PWR_VREF2, RT5671_PWR_VREF2);
 	msleep(100);
 
-	rt5671_reset(codec);
+	rt5671_reset(component);
 
-	rt5671->v_id = snd_soc_read(codec, RT5671_VENDOR_ID) & 0xff;
+	rt5671->v_id = snd_soc_component_read32(component, RT5671_VENDOR_ID) & 0xff;
 	pr_info("v_id = %d\n", rt5671->v_id);
 
-	snd_soc_update_bits(codec, RT5671_PWR_ANLG1,
+	snd_soc_component_update_bits(component, RT5671_PWR_ANLG1,
 		RT5671_PWR_VREF1 | RT5671_PWR_MB |
 		RT5671_PWR_BG | RT5671_PWR_VREF2,
 		RT5671_PWR_VREF1 | RT5671_PWR_MB |
 		RT5671_PWR_BG | RT5671_PWR_VREF2);
 	msleep(20);
-	snd_soc_update_bits(codec, RT5671_PWR_ANLG1,
+	snd_soc_component_update_bits(component, RT5671_PWR_ANLG1,
 		RT5671_PWR_FV1 | RT5671_PWR_FV2,
 		RT5671_PWR_FV1 | RT5671_PWR_FV2);
 	/* DMIC */
 	if (rt5671->dmic_en == RT5671_DMIC1) {
-		snd_soc_update_bits(codec, RT5671_GPIO_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_GPIO_CTRL1,
 			RT5671_GP2_PIN_MASK, RT5671_GP2_PIN_DMIC1_SCL);
-		snd_soc_update_bits(codec, RT5671_DMIC_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_DMIC_CTRL1,
 			RT5671_DMIC_1L_LH_MASK | RT5671_DMIC_1R_LH_MASK,
 			RT5671_DMIC_1L_LH_FALLING | RT5671_DMIC_1R_LH_RISING);
 	} else if (rt5671->dmic_en == RT5671_DMIC2) {
-		snd_soc_update_bits(codec, RT5671_GPIO_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_GPIO_CTRL1,
 			RT5671_GP2_PIN_MASK, RT5671_GP2_PIN_DMIC1_SCL);
-		snd_soc_update_bits(codec, RT5671_DMIC_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_DMIC_CTRL1,
 			RT5671_DMIC_2L_LH_MASK | RT5671_DMIC_2R_LH_MASK,
 			RT5671_DMIC_2L_LH_FALLING | RT5671_DMIC_2R_LH_RISING);
 	}
 
-	rt5671_reg_init(codec);
+	rt5671_reg_init(component);
 	/*for IRQ*/
-	snd_soc_update_bits(codec, RT5671_GPIO_CTRL1, 0x8000, 0x8000);
-	snd_soc_update_bits(codec, RT5671_GPIO_CTRL2, 0x0004, 0x0004);
+	snd_soc_component_update_bits(component, RT5671_GPIO_CTRL1, 0x8000, 0x8000);
+	snd_soc_component_update_bits(component, RT5671_GPIO_CTRL2, 0x0004, 0x0004);
 
-	snd_soc_update_bits(codec, RT5671_PWR_ANLG1, RT5671_LDO_SEL_MASK, 0x1);
+	snd_soc_component_update_bits(component, RT5671_PWR_ANLG1, RT5671_LDO_SEL_MASK, 0x1);
 
-	rt5671->codec = codec;
+	rt5671->component = component;
 	rt5671->combo_jack_en = true; /* enable combo jack */
 
 	if (rt5671->pdata.in2_diff)
-		snd_soc_update_bits(codec, RT5671_IN2,
+		snd_soc_component_update_bits(component, RT5671_IN2,
 					RT5671_IN_DF2, RT5671_IN_DF2);
 	if (rt5671->pdata.in3_diff)
-		snd_soc_update_bits(codec, RT5671_IN3_IN4,
+		snd_soc_component_update_bits(component, RT5671_IN3_IN4,
 					RT5671_IN_DF1, RT5671_IN_DF1);
 
 	if (rt5671->pdata.in4_diff)
-		snd_soc_update_bits(codec, RT5671_IN3_IN4,
+		snd_soc_component_update_bits(component, RT5671_IN3_IN4,
 					RT5671_IN_DF2, RT5671_IN_DF2);
 
 	if (rt5671->pdata.jd_mode) {
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG1,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG1,
 			RT5671_PWR_MB,
 			RT5671_PWR_MB);
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
+		snd_soc_component_update_bits(component, RT5671_PWR_ANLG2,
 			RT5671_PWR_JD1,
 			RT5671_PWR_JD1);
-		snd_soc_update_bits(codec, RT5671_IRQ_CTRL1,
+		snd_soc_component_update_bits(component, RT5671_IRQ_CTRL1,
 					0x0200, 0x0200);
 		switch (rt5671->pdata.jd_mode) {
 		case 1:
-			snd_soc_update_bits(codec, RT5671_A_JD_CTRL1,
+			snd_soc_component_update_bits(component, RT5671_A_JD_CTRL1,
 					0x3, 0x0);
 			break;
 		case 2:
-			snd_soc_update_bits(codec, RT5671_A_JD_CTRL1,
+			snd_soc_component_update_bits(component, RT5671_A_JD_CTRL1,
 					0x3, 0x1);
 			break;
 		case 3:
-			snd_soc_update_bits(codec, RT5671_A_JD_CTRL1,
+			snd_soc_component_update_bits(component, RT5671_A_JD_CTRL1,
 					0x3, 0x2);
 			break;
 		default:
@@ -4130,43 +4118,42 @@ static int rt5671_probe(struct snd_soc_codec *codec)
 			ARRAY_SIZE(rt5671_old_dapm_widgets));
 	}
 
-	ret = device_create_file(codec->dev, &dev_attr_index_reg);
+	ret = device_create_file(component->dev, &dev_attr_index_reg);
 	if (ret != 0) {
-		dev_err(codec->dev,
+		dev_err(component->dev,
 			"Failed to create index_reg sysfs files: %d\n", ret);
 		return ret;
 	}
 
-	ret = device_create_file(codec->dev, &dev_attr_codec_reg);
+	ret = device_create_file(component->dev, &dev_attr_codec_reg);
 	if (ret != 0) {
-		dev_err(codec->dev,
+		dev_err(component->dev,
 			"Failed to create codex_reg sysfs files: %d\n", ret);
 		return ret;
 	}
 
 	rt5671->dsp_sw = RT5671_DSP_NS;
-	rt5671_dsp_probe(codec);
+	rt5671_dsp_probe(component);
 
 	rt5671->jack_type = 0;
 
 	return 0;
 }
 
-static int rt5671_remove(struct snd_soc_codec *codec)
+static void rt5671_remove(struct snd_soc_component *component)
 {
-	return 0;
 }
 
 #ifdef CONFIG_PM
-static int rt5671_suspend(struct snd_soc_codec *codec)
+static int rt5671_suspend(struct snd_soc_component *component)
 {
-	rt5671_dsp_suspend(codec);
+	rt5671_dsp_suspend(component);
 	return 0;
 }
 
-static int rt5671_resume(struct snd_soc_codec *codec)
+static int rt5671_resume(struct snd_soc_component *component)
 {
-	rt5671_dsp_resume(codec);
+	rt5671_dsp_resume(component);
 	return 0;
 }
 #else
@@ -4182,7 +4169,6 @@ struct snd_soc_dai_ops rt5671_aif_dai_ops = {
 	.hw_params = rt5671_hw_params,
 	.prepare = rt5671_prepare,
 	.set_fmt = rt5671_set_dai_fmt,
-	.set_sysclk = rt5671_set_dai_sysclk,
 	.set_pll = rt5671_set_dai_pll,
 	.shutdown = rt5671_shutdown,
 };
@@ -4271,27 +4257,29 @@ struct snd_soc_dai_driver rt5671_dai[] = {
 
 };
 
-static struct snd_soc_codec_driver soc_codec_dev_rt5671 = {
-	.probe = rt5671_probe,
-	.remove = rt5671_remove,
-	.suspend = rt5671_suspend,
-	.resume = rt5671_resume,
-	.set_bias_level = rt5671_set_bias_level,
-	.idle_bias_off = true,
-	.component_driver = {
-		.controls		= rt5671_snd_controls,
-		.num_controls		= ARRAY_SIZE(rt5671_snd_controls),
-		.dapm_widgets		= rt5671_dapm_widgets,
-		.num_dapm_widgets	= ARRAY_SIZE(rt5671_dapm_widgets),
-		.dapm_routes		= rt5671_dapm_routes,
-		.num_dapm_routes	= ARRAY_SIZE(rt5671_dapm_routes),
-	},
+static const struct snd_soc_component_driver soc_component_dev_rt5671 = {
+	.probe			= rt5671_probe,
+	.remove			= rt5671_remove,
+	.suspend		= rt5671_suspend,
+	.resume			= rt5671_resume,
+	.set_bias_level		= rt5671_set_bias_level,
+	.set_sysclk		= rt5671_set_sysclk,
+	.controls		= rt5671_snd_controls,
+	.num_controls		= ARRAY_SIZE(rt5671_snd_controls),
+	.dapm_widgets		= rt5671_dapm_widgets,
+	.num_dapm_widgets	= ARRAY_SIZE(rt5671_dapm_widgets),
+	.dapm_routes		= rt5671_dapm_routes,
+	.num_dapm_routes	= ARRAY_SIZE(rt5671_dapm_routes),
+	.use_pmdown_time	= 1,
+	.endianness		= 1,
+	.non_legacy_dai_naming	= 1,
 };
 
 static const struct regmap_config rt5671_regmap = {
 	.reg_bits = 8,
 	.val_bits = 16,
-	.use_single_rw = true,
+	.use_single_read = true,
+	.use_single_write = true,
 	.max_register = RT5671_VENDOR_ID2 + 1 + (ARRAY_SIZE(rt5671_ranges) *
 					       RT5671_PR_SPACING),
 	.volatile_reg = rt5671_volatile_register,
@@ -4344,14 +4332,13 @@ static int rt5671_i2c_probe(struct i2c_client *i2c,
 		return -ENODEV;
 	}
 
-	return snd_soc_register_codec(&i2c->dev, &soc_codec_dev_rt5671,
+	return devm_snd_soc_register_component(&i2c->dev,
+			&soc_component_dev_rt5671,
 			rt5671_dai, ARRAY_SIZE(rt5671_dai));
 }
 
 static int rt5671_i2c_remove(struct i2c_client *i2c)
 {
-	snd_soc_unregister_codec(&i2c->dev);
-
 	return 0;
 }
 

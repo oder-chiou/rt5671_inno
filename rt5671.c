@@ -40,7 +40,6 @@ module_param(hp_amp_time, int, 0644);
 #define JD1_FUNC
 /*#define USE_INT_CLK*/
 /*#define USE_TDM*/
-/*#define NVIDIA_DALMORE*/
 
 #define RT5671_PR_RANGE_BASE (0xff + 1)
 #define RT5671_PR_SPACING 0x100
@@ -104,6 +103,7 @@ static struct rt5671_init_reg init_list[] = {
 	/* Mute STO1 ADC for depop */
 	{ RT5671_STO1_ADC_DIG_VOL, 0xafaf },
 	{ RT5671_PDM_OUT_CTRL	, 0xff00 },
+	{ RT5671_ASRC_8		, 0x0123 },
 
 #ifdef JD1_FUNC
 	{ RT5671_GPIO_CTRL1	, 0x8000 },
@@ -628,7 +628,7 @@ int rt5671_headset_detect(struct snd_soc_codec *codec, int jack_insert)
 
 		for (i = 0 ; i < 10; i++) {
 			msleep(100);
-			if (snd_soc_read(codec, RT5671_CJ_CTRL2) & 0x4000)
+			if (snd_soc_read(codec, RT5671_CJ_CTRL3) & 0x7)
 				break;
 		}
 
@@ -2275,18 +2275,6 @@ static int rt5671_set_dmic1_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
-#ifdef NVIDIA_DALMORE
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
-			RT5671_PWR_BST1 | RT5671_PWR_BST1_P,
-			RT5671_PWR_BST1 | RT5671_PWR_BST1_P);
-		snd_soc_update_bits(codec, RT5671_CJ_CTRL2,
-			RT5671_CBJ_DET_MODE, RT5671_CBJ_DET_MODE);
-#endif
-		snd_soc_update_bits(codec, RT5671_GPIO_CTRL1,
-			RT5671_GP2_PIN_MASK | RT5671_GP6_PIN_MASK |
-			RT5671_I2S2_PIN_MASK,
-			RT5671_GP2_PIN_DMIC1_SCL | RT5671_GP6_PIN_DMIC1_SDA |
-			RT5671_I2S2_PIN_GPIO);
 		snd_soc_update_bits(codec, RT5671_DMIC_CTRL1,
 			RT5671_DMIC_1L_LH_MASK | RT5671_DMIC_1R_LH_MASK |
 			RT5671_DMIC_1_DP_MASK,
@@ -2294,12 +2282,6 @@ static int rt5671_set_dmic1_event(struct snd_soc_dapm_widget *w,
 			RT5671_DMIC_1_DP_GPIO6);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-#ifdef NVIDIA_DALMORE
-		snd_soc_update_bits(codec, RT5671_CJ_CTRL2, RT5671_CBJ_DET_MODE,
-			0);
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
-			RT5671_PWR_BST1 | RT5671_PWR_BST1_P, 0);
-#endif
 		break;
 	default:
 		return 0;
@@ -2366,7 +2348,6 @@ static int rt5671_bst1_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -2376,11 +2357,6 @@ static int rt5671_bst1_event(struct snd_soc_dapm_widget *w,
 
 		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
 			RT5671_PWR_BST1_P, RT5671_PWR_BST1_P);
-		if (rt5671->combo_jack_en) {
-			snd_soc_update_bits(codec, RT5671_PWR_VOL,
-				RT5671_PWR_MIC_DET, RT5671_PWR_MIC_DET);
-			snd_soc_update_bits(codec, RT5671_GEN_CTRL2, 0x2, 0x0);
-		}
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
@@ -4193,14 +4169,10 @@ static int rt5671_probe(struct snd_soc_codec *codec)
 	}
 
 	rt5671_reg_init(codec);
-	/*for IRQ*/
-	snd_soc_update_bits(codec, RT5671_GPIO_CTRL1, 0x8000, 0x8000);
-	snd_soc_update_bits(codec, RT5671_GPIO_CTRL2, 0x0004, 0x0004);
 
 	snd_soc_update_bits(codec, RT5671_PWR_ANLG1, RT5671_LDO_SEL_MASK, 0x1);
 
 	rt5671->codec = codec;
-	rt5671->combo_jack_en = true; /* enable combo jack */
 
 	if (rt5671->pdata.in2_diff)
 		snd_soc_update_bits(codec, RT5671_IN2,

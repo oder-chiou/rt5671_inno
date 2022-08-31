@@ -2081,7 +2081,6 @@ struct rt5671_priv {
 	int pll_out;
 
 	int dmic_en;
-	bool combo_jack_en;
 	int dsp_sw; /* expected parameter setting */
 	bool dsp_play_pass;
 	bool dsp_rec_pass;

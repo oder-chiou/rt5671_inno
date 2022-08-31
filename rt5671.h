@@ -2064,8 +2064,7 @@ struct rt5671_priv {
 	struct snd_soc_codec *codec;
 	struct rt5671_platform_data pdata;
 	struct regmap *regmap;
-	struct delayed_work patch_work;
-	struct snd_soc_jack hp_jack;
+	struct snd_soc_jack *hp_jack;
 	struct snd_soc_jack_gpio hp_gpio;
 
 	int aif_pu;
@@ -2091,5 +2090,8 @@ struct rt5671_priv {
 	unsigned int adb_reg_value[0x100];
 	unsigned char adb_reg_num;
 };
+
+int rt5671_set_jack(struct snd_soc_codec *codec,
+	struct snd_soc_jack *jack);
 
 #endif /* __RT5671_H__ */

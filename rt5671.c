@@ -716,6 +716,71 @@ int rt5671_check_interrupt_event(struct snd_soc_codec *codec, int *data)
 }
 EXPORT_SYMBOL(rt5671_check_interrupt_event);
 
+static int rt5671_irq_detection(void *data)
+{
+	struct rt5671_priv *rt5671 = (struct rt5671_priv *)data;
+	struct snd_soc_codec *codec = rt5671->codec;
+	struct snd_soc_jack_gpio *gpio = &rt5671->hp_gpio;
+	struct snd_soc_jack *jack = rt5671->hp_jack;
+	int val, btn_type, report = jack->status;
+
+	if (rt5671->pdata.jd_mode == 1) /* 2 port */
+		val = snd_soc_read(codec, RT5671_A_JD_CTRL1) & 0x0070;
+	else
+		val = snd_soc_read(codec, RT5671_A_JD_CTRL1) & 0x0020;
+
+	switch (val) {
+	/* jack in */
+	case 0x30: /* 2 port */
+	case 0x0: /* 1 port or 2 port */
+		if (rt5671->jack_type == 0) {
+			report = rt5671_headset_detect(codec, 1);
+			/* for push button and jack out */
+			gpio->debounce_time = 25;
+			break;
+		}
+		btn_type = 0;
+		if (snd_soc_read(codec, RT5671_IRQ_CTRL3) & 0x4) {
+			/* button pressed */
+			report = SND_JACK_HEADSET;
+			btn_type = rt5671_button_detect(codec);
+			switch (btn_type) {
+			case 0x2000: /* up */
+				report |= SND_JACK_BTN_1;
+				break;
+			case 0x0400: /* center */
+				report |= SND_JACK_BTN_0;
+				break;
+			case 0x0080: /* down */
+				report |= SND_JACK_BTN_2;
+				break;
+			default:
+				dev_err(codec->dev,
+					"Unexpected button code 0x%04x\n",
+					btn_type);
+				break;
+			}
+		}
+		if (btn_type == 0)/* button release */
+			report =  rt5671->jack_type;
+
+		break;
+	/* jack out */
+	case 0x70: /* 2 port */
+	case 0x10: /* 2 port */
+	case 0x20: /* 1 port */
+		report = 0;
+		snd_soc_update_bits(codec, RT5671_IRQ_CTRL3, 0x1, 0x0);
+		rt5671_headset_detect(codec, 0);
+		gpio->debounce_time = 150; /* for jack in */
+		break;
+	default:
+		break;
+	}
+
+	return report;
+}
+
 static const DECLARE_TLV_DB_SCALE(drc_limiter_tlv, 0, 375, 0);
 static const DECLARE_TLV_DB_SCALE(drc_pre_tlv, 0, 750, 0);
 static const DECLARE_TLV_DB_SCALE(out_vol_tlv, -4650, 150, 0);
@@ -1471,7 +1536,7 @@ static const struct snd_kcontrol_new rt5671_hpr_mix[] = {
 };
 
 /* DAC1 L/R source */ /* MX-29 [9:8] [11:10] */
-static const char * const const rt5671_dac1_src[] = {
+static const char * const rt5671_dac1_src[] = {
 	"IF1 DAC", "IF2 DAC", "IF3 DAC", "IF4 DAC"
 };
 
@@ -1493,7 +1558,7 @@ static const struct snd_kcontrol_new rt5671_dac1r_mux =
 static int rt5671_dac12_map_values[] = {
 	0, 1, 2, 3, 5, 6,
 };
-static const char * const const rt5671_dac12_src[] = {
+static const char * const rt5671_dac12_src[] = {
 	"IF1 DAC", "IF2 DAC", "IF3 DAC", "TxDC DAC", "VAD_ADC", "IF4 DAC"
 };
 
@@ -3653,6 +3718,33 @@ static int rt5671_set_dai_sysclk(struct snd_soc_dai *dai,
 	return 0;
 }
 
+int rt5671_set_jack(struct snd_soc_codec *codec,
+		struct snd_soc_jack *jack)
+{
+	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
+	int ret;
+
+	rt5671->hp_jack = jack;
+	rt5671->hp_gpio.gpiod_dev = codec->dev;
+	rt5671->hp_gpio.name = "headset";
+	rt5671->hp_gpio.report = SND_JACK_HEADSET |
+		SND_JACK_BTN_0 | SND_JACK_BTN_1 | SND_JACK_BTN_2;
+	rt5671->hp_gpio.debounce_time = 150;
+	rt5671->hp_gpio.wake = true;
+	rt5671->hp_gpio.data = rt5671;
+	rt5671->hp_gpio.jack_status_check = rt5671_irq_detection;
+
+	ret = snd_soc_jack_add_gpios(rt5671->hp_jack, 1,
+			&rt5671->hp_gpio);
+	if (ret) {
+		dev_err(codec->dev, "Adding jack GPIO failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rt5671_set_jack);
+
 /**
  * rt5671_pll_calc - Calcualte PLL M/N/K code.
  * @freq_in: external clock provided to codec.
@@ -4309,6 +4401,28 @@ static const struct i2c_device_id rt5671_i2c_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, rt5671_i2c_id);
 
+static int rt5671_parse_dt(struct rt5671_priv *rt5671, struct device_node *np)
+{
+	of_property_read_u32(np, "realtek,jd-mode",
+		&rt5671->pdata.jd_mode);
+
+	rt5671->pdata.in2_diff = of_property_read_bool(np,
+					"realtek,in2-differential");
+	rt5671->pdata.in3_diff = of_property_read_bool(np,
+					"realtek,in3-differential");
+
+	rt5671->pdata.bclk_32fs[0] = of_property_read_bool(np,
+					"realtek,bclk1-32fs");
+	rt5671->pdata.bclk_32fs[1] = of_property_read_bool(np,
+					"realtek,bclk2-32fs");
+	rt5671->pdata.bclk_32fs[2] = of_property_read_bool(np,
+					"realtek,bclk3-32fs");
+	rt5671->pdata.bclk_32fs[3] = of_property_read_bool(np,
+					"realtek,bclk4-32fs");
+
+	return 0;
+}
+
 static int rt5671_i2c_probe(struct i2c_client *i2c,
 		    const struct i2c_device_id *id)
 {
@@ -4326,6 +4440,8 @@ static int rt5671_i2c_probe(struct i2c_client *i2c,
 
 	if (pdata)
 		rt5671->pdata = *pdata;
+	else if (i2c->dev.of_node)
+		rt5671_parse_dt(rt5671, i2c->dev.of_node);
 
 	pr_debug("enter %s\n", __func__);
 

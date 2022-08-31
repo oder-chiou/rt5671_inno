@@ -439,7 +439,7 @@ static ssize_t rt5671_dsp_reg_store(struct device *dev,
 			addr = (addr << 4) | ((*(buf + i) - 'A') + 0xa);
 		else
 			break;
-	 
+
 	/* Value*/
 	for (i = i + 1; i < count; i++)
 		if (*(buf + i) <= '9' && *(buf + i) >= '0')

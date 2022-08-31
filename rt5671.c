@@ -37,6 +37,7 @@ static int hp_amp_time = 20;
 module_param(hp_amp_time, int, 0644);
 
 #define RT5671_DET_EXT_MIC 0
+#define JD1_FUNC
 /*#define USE_INT_CLK*/
 /*#define USE_TDM*/
 /*#define NVIDIA_DALMORE*/
@@ -64,7 +65,6 @@ struct rt5671_init_reg {
 static struct rt5671_init_reg init_list[] = {
 	/* fa[0]=1, fa[3]=1'b MCLK det, fa[15:14]=11'b for pdm */
 	{ RT5671_GEN_CTRL1	, 0x8011 },
-	{ RT5671_GEN_CTRL3	, 0x0084 },
 	{ RT5671_IL_CMD1	, 0x0000 },
 	{ RT5671_IL_CMD2	, 0x0010 }, /* set Inline Command Window */
 	{ RT5671_IL_CMD3	, 0x0014 },
@@ -106,10 +106,13 @@ static struct rt5671_init_reg init_list[] = {
 	{ RT5671_PDM_OUT_CTRL	, 0xff00 },
 
 #ifdef JD1_FUNC
-	{ RT5671_GPIO_CTRL2	, 0x0004 },
 	{ RT5671_GPIO_CTRL1	, 0x8000 },
-	{ RT5671_IRQ_CTRL1	, 0x0280 },
-	{ RT5671_JD_CTRL3	, 0x0088 },
+	{ RT5671_IRQ_CTRL1	, 0x0200 },
+	{ RT5671_JD_CTRL3	, 0x0030 },
+	{ RT5671_A_JD_CTRL1	, 0x0001 },
+	{ RT5671_PWR_ANLG2	, 0x0004 },
+	{ RT5671_PWR_VOL	, 0x0020 },
+	{ RT5671_GLB_CLK	, 0x8000 },
 #endif
 #if 0 /* DSP */
 	{ RT5671_STO_DAC_MIXER	, 0x4646 },
@@ -607,44 +610,57 @@ int rt5671_headset_detect(struct snd_soc_codec *codec, int jack_insert)
 	int val;
 	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
 	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	int reg80, i;
 
 	if (jack_insert) {
+		reg80 = snd_soc_read(codec, RT5671_GLB_CLK);
 		snd_soc_dapm_force_enable_pin(dapm, "micbias1");
 		snd_soc_dapm_force_enable_pin(dapm, "Mic Det Power");
 		snd_soc_dapm_sync(dapm);
+		snd_soc_update_bits(codec, RT5671_GLB_CLK,
+			RT5671_SCLK_SRC_MASK, RT5671_SCLK_SRC_RCCLK);
 		snd_soc_update_bits(codec, RT5671_GEN_CTRL2,
 			0x0400, 0x0400);
-		snd_soc_update_bits(codec, RT5671_CJ_CTRL2,
-			RT5671_CBJ_DET_MODE, RT5671_CBJ_DET_MODE);
-		snd_soc_update_bits(codec, RT5671_PWR_ANLG2,
-			RT5671_PWR_JD1, RT5671_PWR_JD1);
-		snd_soc_update_bits(codec, RT5671_CJ_CTRL1, 0x20, 0x20);
-		msleep(300);
-		val = snd_soc_read(codec, RT5671_JD_CTRL3) & 0x7000;
-		if (val == 0x7000) {
+
+		snd_soc_update_bits(codec, RT5671_CJ_CTRL1, 0x4, 0x4);
+		snd_soc_update_bits(codec, RT5671_JD_CTRL3, 0x00c0, 0);
+		snd_soc_update_bits(codec, RT5671_JD_CTRL3, 0x00c0, 0x00c0);
+
+		for (i = 0 ; i < 10; i++) {
+			msleep(100);
+			if (snd_soc_read(codec, RT5671_CJ_CTRL2) & 0x4000)
+				break;
+		}
+
+		val = snd_soc_read(codec, RT5671_CJ_CTRL2) & 0x2000;
+		if (val == 0x2000) {
+
 			rt5671->jack_type = SND_JACK_HEADSET;
 
 			snd_soc_update_bits(codec, RT5671_CJ_CTRL1, 0x0180, 0x0180);
-			snd_soc_update_bits(codec, RT5671_JD_CTRL3, 0x00c0, 0x00c0);
-
 			snd_soc_update_bits(codec, RT5671_IRQ_CTRL3, 0x8, 0x8);
 			snd_soc_update_bits(codec, RT5671_IL_CMD1, 0x40, 0x40);
-			snd_soc_read(codec, RT5671_IL_CMD1);
 		} else {
 			rt5671->jack_type = SND_JACK_HEADPHONE;
 			snd_soc_dapm_disable_pin(dapm, "micbias1");
 			snd_soc_dapm_disable_pin(dapm, "Mic Det Power");
 			snd_soc_dapm_sync(dapm);
+			snd_soc_update_bits(codec, RT5671_JD_CTRL3, 0x00c0, 0);
+			snd_soc_update_bits(codec, RT5671_CJ_CTRL1, 0x4, 0);
 		}
+
+		snd_soc_update_bits(codec, RT5671_GLB_CLK,
+			RT5671_SCLK_SRC_MASK, reg80);
 	} else {
 		snd_soc_update_bits(codec, RT5671_IL_CMD1, 0x40, 0x0);
 		snd_soc_update_bits(codec, RT5671_IRQ_CTRL3, 0x8, 0x0);
 		snd_soc_update_bits(codec, RT5671_CJ_CTRL1, 0x0180, 0x0);
-		snd_soc_update_bits(codec, RT5671_JD_CTRL3, 0x00c0, 0x0);
 		rt5671->jack_type = 0;
 		snd_soc_dapm_disable_pin(dapm, "micbias1");
 		snd_soc_dapm_disable_pin(dapm, "Mic Det Power");
 		snd_soc_dapm_sync(dapm);
+		snd_soc_update_bits(codec, RT5671_JD_CTRL3, 0x00c0, 0);
+		snd_soc_update_bits(codec, RT5671_CJ_CTRL1, 0x4, 0);
 	}
 
 	pr_debug("jack_type = %d\n", rt5671->jack_type);
@@ -655,7 +671,7 @@ EXPORT_SYMBOL(rt5671_headset_detect);
 int rt5671_button_detect(struct snd_soc_codec *codec)
 {
 	int btn_type, val;
-		
+
 	val = snd_soc_read(codec, RT5671_IL_CMD1);
 	btn_type = val & 0xff80;
 	snd_soc_write(codec, RT5671_IL_CMD1, val);
@@ -712,7 +728,6 @@ int rt5671_check_interrupt_event(struct snd_soc_codec *codec, int *data)
 	}
 
 	return RT5671_UN_EVENT;
-	
 }
 EXPORT_SYMBOL(rt5671_check_interrupt_event);
 
@@ -1043,7 +1058,7 @@ static int rt5671_push_btn_put(struct snd_kcontrol *kcontrol,
 }
 
 static const char *rt5671_jack_type_mode[] = {
-	"Disable", "read"
+	"Disable", "read", "plug out"
 };
 
 static const SOC_ENUM_SINGLE_DECL(rt5671_jack_type_enum, 0, 0, rt5671_jack_type_mode);
@@ -1062,6 +1077,12 @@ static int rt5671_jack_type_put(struct snd_kcontrol *kcontrol,
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
 	struct snd_soc_codec *codec = snd_soc_component_to_codec(component);
 	int jack_insert = ucontrol->value.integer.value[0];
+
+	if (!jack_insert)
+		return 0;
+
+	if (jack_insert == 2)
+		jack_insert = 0;
 
 	printk(KERN_INFO "ret=0x%x\n", rt5671_headset_detect(codec, jack_insert));
 
@@ -1637,14 +1658,14 @@ static const SOC_ENUM_SINGLE_DECL(
 
 static const struct snd_kcontrol_new rt5671_sto_adc1_mux =
 	SOC_DAPM_ENUM("Stereo1 ADC1 source", rt5671_stereo1_adc1_enum);
-	
+
 static const SOC_ENUM_SINGLE_DECL(
 	rt5671_stereo2_adc1_enum, RT5671_STO2_ADC_MIXER,
 	RT5671_ADC_1_SRC_SFT, rt5671_stereo_adc1_src);
 
 static const struct snd_kcontrol_new rt5671_sto2_adc1_mux =
 	SOC_DAPM_ENUM("Stereo2 ADC1 source", rt5671_stereo2_adc1_enum);
-	
+
 /* MX-27 MX-26 [11] */
 static const char * const rt5671_stereo_adc2_src[] = {
 	"DAC MIX", "DMIC"
@@ -3509,7 +3530,7 @@ static int rt5671_hw_params(struct snd_pcm_substream *substream,
 		dev_err(codec->dev, "Unsupported clock setting\n");
 		return -EINVAL;
 	}
-	
+
 	if (rt5671->pdata.bclk_32fs[dai->id])
 		bclk_ms = 0;
 	else
@@ -3724,6 +3745,9 @@ int rt5671_set_jack(struct snd_soc_codec *codec,
 	struct rt5671_priv *rt5671 = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
+	if (!jack)
+		return 0;
+
 	rt5671->hp_jack = jack;
 	rt5671->hp_gpio.gpiod_dev = codec->dev;
 	rt5671->hp_gpio.name = "headset";
@@ -3740,6 +3764,8 @@ int rt5671_set_jack(struct snd_soc_codec *codec,
 		dev_err(codec->dev, "Adding jack GPIO failed\n");
 		return ret;
 	}
+
+	rt5671_irq_detection(rt5671);
 
 	return 0;
 }
